@@ -2,8 +2,8 @@
 //!
 //! This structure can be used for validating, dissecting and comparing Debian version strings.
 
-use std::str::FromStr;
 use lazy_regex::regex;
+use std::str::FromStr;
 
 /// A Debian version string
 ///
@@ -12,7 +12,7 @@ use lazy_regex::regex;
 struct Version {
     epoch: Option<u32>,
     upstream_version: String,
-    debian_revision: Option<String>
+    debian_revision: Option<String>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -33,14 +33,21 @@ impl FromStr for Version {
         let c = regex!(
             r"^((?P<epoch>\d+):)?(?P<upstream_version>[A-Za-z0-9.+:~-]+?)(-(?P<debian_revision>[A-Za-z0-9+.~]+))?$").captures(text).ok_or(ParseError("Invalid debian version".to_string()))?;
 
-        let epoch = c.name("epoch").map(|e| e.as_str().parse().map_err(|e| ParseError(format!("Error parsing epoch: {}", e)))).transpose()?;
+        let epoch = c
+            .name("epoch")
+            .map(|e| {
+                e.as_str()
+                    .parse()
+                    .map_err(|e| ParseError(format!("Error parsing epoch: {}", e)))
+            })
+            .transpose()?;
         let upstream_version = c.name("upstream_version").unwrap().as_str().to_string();
         let debian_revision = c.name("debian_revision").map(|r| r.as_str().to_string());
 
         Ok(Version {
             epoch,
             upstream_version,
-            debian_revision
+            debian_revision,
         })
     }
 }
@@ -81,49 +88,75 @@ impl Eq for Version {}
 
 #[cfg(test)]
 mod tests {
-    use super::{Version, ParseError};
+    use super::{ParseError, Version};
 
     #[test]
     fn test_parse() {
-        assert_eq!(Version {
-            epoch: None,
-            upstream_version: "1.0".to_string(),
-            debian_revision: Some("1".to_string())
-        }, "1.0-1".parse().unwrap());
+        assert_eq!(
+            Version {
+                epoch: None,
+                upstream_version: "1.0".to_string(),
+                debian_revision: Some("1".to_string())
+            },
+            "1.0-1".parse().unwrap()
+        );
 
-        assert_eq!(Version {
-            epoch: None,
-            upstream_version: "1.0".to_string(),
-            debian_revision: None
-        }, "1.0".parse().unwrap());
+        assert_eq!(
+            Version {
+                epoch: None,
+                upstream_version: "1.0".to_string(),
+                debian_revision: None
+            },
+            "1.0".parse().unwrap()
+        );
 
-        assert_eq!(Version {
-            epoch: Some(1),
-            upstream_version: "1.0".to_string(),
-            debian_revision: Some("1".to_string())
-        }, "1:1.0-1".parse().unwrap());
-        assert_eq!("1:;a".parse::<Version>().unwrap_err(), ParseError("Invalid debian version".to_string()));
+        assert_eq!(
+            Version {
+                epoch: Some(1),
+                upstream_version: "1.0".to_string(),
+                debian_revision: Some("1".to_string())
+            },
+            "1:1.0-1".parse().unwrap()
+        );
+        assert_eq!(
+            "1:;a".parse::<Version>().unwrap_err(),
+            ParseError("Invalid debian version".to_string())
+        );
     }
 
     #[test]
     fn test_to_string() {
-        assert_eq!("1.0-1", Version {
-            epoch: None,
-            upstream_version: "1.0".to_string(),
-            debian_revision: Some("1".to_string())
-        }.to_string());
-        assert_eq!("1.0", Version {
-            epoch: None,
-            upstream_version: "1.0".to_string(),
-            debian_revision: None,
-        }.to_string());
+        assert_eq!(
+            "1.0-1",
+            Version {
+                epoch: None,
+                upstream_version: "1.0".to_string(),
+                debian_revision: Some("1".to_string())
+            }
+            .to_string()
+        );
+        assert_eq!(
+            "1.0",
+            Version {
+                epoch: None,
+                upstream_version: "1.0".to_string(),
+                debian_revision: None,
+            }
+            .to_string()
+        );
     }
 
     #[test]
     fn test_eq() {
-        assert_eq!("1.0-1".parse::<Version>().unwrap(), "1.0-1".parse::<Version>().unwrap());
+        assert_eq!(
+            "1.0-1".parse::<Version>().unwrap(),
+            "1.0-1".parse::<Version>().unwrap()
+        );
     }
 }
+
+#[cfg(feature = "sqlx")]
+use sqlx::{postgres::PgTypeInfo, Postgres};
 
 #[cfg(feature = "sqlx")]
 impl sqlx::Type<Postgres> for Version {
@@ -135,7 +168,7 @@ impl sqlx::Type<Postgres> for Version {
 #[cfg(feature = "sqlx")]
 impl sqlx::Encode<'_, Postgres> for Version {
     fn encode_by_ref(&self, buf: &mut sqlx::postgres::PgArgumentBuffer) -> sqlx::encode::IsNull {
-        sqlx::Encode::encode_by_ref(&self.0.as_str(), buf)
+        sqlx::Encode::encode_by_ref(&self.to_string().as_str(), buf)
     }
 }
 
@@ -145,7 +178,6 @@ impl sqlx::Decode<'_, Postgres> for Version {
         value: sqlx::postgres::PgValueRef<'_>,
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         let s: &str = sqlx::Decode::decode(value)?;
-        Ok(Version(s.to_string()))
+        Ok(s.parse::<Version>()?)
     }
 }
-
