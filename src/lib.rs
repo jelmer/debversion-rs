@@ -10,9 +10,9 @@ use std::str::FromStr;
 ///
 #[derive(Debug, Clone)]
 pub struct Version {
-    epoch: Option<u32>,
-    upstream_version: String,
-    debian_revision: Option<String>,
+    pub epoch: Option<u32>,
+    pub upstream_version: String,
+    pub debian_revision: Option<String>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
