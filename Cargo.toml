@@ -4,6 +4,12 @@ version = "0.1.0"
 edition = "2021"
 authors = ["Jelmer Vernooĳ <jelmer@debian.org>"]
 license = "Apache-2.0-or-later"
+description = "Debian version parsing, manipulation and comparison"
+
+[features]
+default = []
+sqlx = ["dep:sqlx"]
 
 [dependencies]
 lazy-regex = "3"
+sqlx = { version = "0.6", features = ["postgres"], optional = true }

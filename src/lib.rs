@@ -124,3 +124,26 @@ mod tests {
         assert_eq!("1.0-1".parse::<Version>().unwrap(), "1.0-1".parse::<Version>().unwrap());
     }
 }
+
+#[cfg(feature = "sqlx")]
+impl sqlx::Type<Postgres> for Debversion {
+    fn type_info() -> PgTypeInfo {
+        PgTypeInfo::with_name("debversion")
+    }
+}
+
+impl sqlx::Encode<'_, Postgres> for Debversion {
+    fn encode_by_ref(&self, buf: &mut sqlx::postgres::PgArgumentBuffer) -> sqlx::encode::IsNull {
+        sqlx::Encode::encode_by_ref(&self.0.as_str(), buf)
+    }
+}
+
+impl sqlx::Decode<'_, Postgres> for Debversion {
+    fn decode(
+        value: sqlx::postgres::PgValueRef<'_>,
+    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        let s: &str = sqlx::Decode::decode(value)?;
+        Ok(Debversion(s.to_string()))
+    }
+}
+

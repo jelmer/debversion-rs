@@ -24,3 +24,10 @@ let version1: Version = "1.0-1".parse()?;
 let version2: Version = "1.0~alpha1-1".parse()?;
 assert!(version2 < version1);
 ```
+
+## Features
+
+### sqlx
+
+The `sqlx` feature adds serialization support for the postgres
+[debversion extension](https://pgxn.org/dist/debversion/) when using sqlx.
