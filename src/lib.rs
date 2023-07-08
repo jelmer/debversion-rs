@@ -102,7 +102,7 @@ mod tests {
             upstream_version: "1.0".to_string(),
             debian_revision: Some("1".to_string())
         }, "1:1.0-1".parse().unwrap());
-        assert_eq!("1:1:1:1:".parse::<Version>().unwrap_err(), ParseError("Foo".to_string()));
+        assert_eq!("1:;a".parse::<Version>().unwrap_err(), ParseError("Invalid debian version".to_string()));
     }
 
     #[test]
@@ -126,24 +126,26 @@ mod tests {
 }
 
 #[cfg(feature = "sqlx")]
-impl sqlx::Type<Postgres> for Debversion {
+impl sqlx::Type<Postgres> for Version {
     fn type_info() -> PgTypeInfo {
         PgTypeInfo::with_name("debversion")
     }
 }
 
-impl sqlx::Encode<'_, Postgres> for Debversion {
+#[cfg(feature = "sqlx")]
+impl sqlx::Encode<'_, Postgres> for Version {
     fn encode_by_ref(&self, buf: &mut sqlx::postgres::PgArgumentBuffer) -> sqlx::encode::IsNull {
         sqlx::Encode::encode_by_ref(&self.0.as_str(), buf)
     }
 }
 
-impl sqlx::Decode<'_, Postgres> for Debversion {
+#[cfg(feature = "sqlx")]
+impl sqlx::Decode<'_, Postgres> for Version {
     fn decode(
         value: sqlx::postgres::PgValueRef<'_>,
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         let s: &str = sqlx::Decode::decode(value)?;
-        Ok(Debversion(s.to_string()))
+        Ok(Version(s.to_string()))
     }
 }
 
