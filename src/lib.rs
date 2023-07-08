@@ -8,15 +8,15 @@ use std::str::FromStr;
 /// A Debian version string
 ///
 ///
-#[derive(Debug)]
-struct Version {
+#[derive(Debug, Clone)]
+pub struct Version {
     epoch: Option<u32>,
     upstream_version: String,
     debian_revision: Option<String>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
-struct ParseError(String);
+pub struct ParseError(String);
 
 impl std::fmt::Display for ParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -86,9 +86,52 @@ impl PartialEq for Version {
 
 impl Eq for Version {}
 
+impl Version {
+    pub fn canonicalize(&self) -> Version {
+        let epoch = match self.epoch {
+            Some(0) | None => None,
+            Some(epoch) => Some(epoch),
+        };
+
+        let upstream_version = self
+            .upstream_version
+            .strip_prefix('0')
+            .unwrap_or(&self.upstream_version)
+            .to_string();
+
+        let debian_revision = match self.debian_revision.as_ref() {
+            Some(r) if r.chars().all(|c| c == '0') => None,
+            None => None,
+            Some(revision) => Some(revision.clone()),
+        };
+
+        Version {
+            epoch,
+            upstream_version,
+            debian_revision,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{ParseError, Version};
+
+    #[test]
+    fn test_canonicalize() {
+        assert_eq!(
+            "1.0-1".parse::<Version>().unwrap().canonicalize(),
+            "1.0-1".parse::<Version>().unwrap()
+        );
+        assert_eq!(
+            "1.0-0".parse::<Version>().unwrap().canonicalize(),
+            "1.0".parse::<Version>().unwrap()
+        );
+        assert_eq!(
+            "0:1.0-2".parse::<Version>().unwrap().canonicalize(),
+            "1.0-2".parse::<Version>().unwrap()
+        );
+    }
 
     #[test]
     fn test_parse() {
