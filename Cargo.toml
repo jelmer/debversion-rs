@@ -3,7 +3,7 @@ name = "debversion"
 version = "0.1.0"
 edition = "2021"
 authors = ["Jelmer Vernooĳ <jelmer@debian.org>"]
-license = "Apache-2.0-or-later"
+license = "Apache-2.0"
 description = "Debian version parsing, manipulation and comparison"
 
 [features]
