@@ -193,6 +193,17 @@ impl ToString for Version {
     }
 }
 
+impl std::hash::Hash for Version {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        (
+            self.epoch,
+            self.upstream_version.as_str(),
+            self.debian_revision.as_deref(),
+        )
+            .hash(state);
+    }
+}
+
 impl Version {
     /// Return explicit tuple of this version
     ///
@@ -207,6 +218,14 @@ impl Version {
     }
 
     /// Return canonicalized version of this version
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use debversion::Version;
+    /// assert_eq!("1.0-0".parse::<Version>().unwrap().canonicalize(), "1.0".parse::<Version>().unwrap());
+    /// assert_eq!("1.0-1".parse::<Version>().unwrap().canonicalize(), "1.0-1".parse::<Version>().unwrap());
+    /// ```
     pub fn canonicalize(&self) -> Version {
         let epoch = match self.epoch {
             Some(0) | None => None,
@@ -369,6 +388,27 @@ mod tests {
             "1.0-1".parse::<Version>().unwrap(),
             "1.0-1".parse::<Version>().unwrap()
         );
+    }
+
+    #[test]
+    fn test_hash() {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+
+        let mut hasher1 = DefaultHasher::new();
+        let mut hasher2 = DefaultHasher::new();
+        let mut hasher3 = DefaultHasher::new();
+
+        "1.0-1".parse::<Version>().unwrap().hash(&mut hasher1);
+        "1.0-1".parse::<Version>().unwrap().hash(&mut hasher2);
+        "0:1.0-1".parse::<Version>().unwrap().hash(&mut hasher3);
+
+        let hash1 = hasher1.finish();
+        let hash2 = hasher2.finish();
+        let hash3 = hasher3.finish();
+
+        assert_eq!(hash1, hash2);
+        assert_ne!(hash1, hash3);
     }
 }
 
