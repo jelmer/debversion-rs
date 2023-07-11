@@ -3,17 +3,124 @@
 //! This structure can be used for validating, dissecting and comparing Debian version strings.
 
 use lazy_regex::regex;
+use std::cmp::Ordering;
 use std::str::FromStr;
 
 /// A Debian version string
 ///
 ///
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Ord)]
 pub struct Version {
     pub epoch: Option<u32>,
     pub upstream_version: String,
     pub debian_revision: Option<String>,
 }
+
+fn version_cmp_string(va: &str, vb: &str) -> Ordering {
+    fn order(x: char) -> i32 {
+        match x {
+            '~' => -1,
+            '0'..='9' => x.to_digit(10).unwrap_or(0) as i32 + 1,
+            'A'..='Z' | 'a'..='z' => x as i32,
+            _ => x as i32 + 256,
+        }
+    }
+
+    let la: Vec<i32> = va.chars().map(|x| order(x)).collect();
+    let lb: Vec<i32> = vb.chars().map(|x| order(x)).collect();
+    let mut la_iter = la.iter();
+    let mut lb_iter = lb.iter();
+    while la_iter.len() > 0 || lb_iter.len() > 0 {
+        let a = if let Some(a) = la_iter.next() { *a } else { 0 };
+        let b = if let Some(b) = lb_iter.next() { *b } else { 0 };
+        if a < b {
+            return Ordering::Less;
+        }
+        if a > b {
+            return Ordering::Greater;
+        }
+    }
+    Ordering::Equal
+}
+
+fn version_cmp_part(va: &str, vb: &str) -> Ordering {
+    let mut la_iter = va.chars();
+    let mut lb_iter = vb.chars();
+    let mut la = String::new();
+    let mut lb = String::new();
+    let mut res = Ordering::Equal;
+
+    while let (Some(a), Some(b)) = (la_iter.next(), lb_iter.next()) {
+        if a.is_digit(10) && b.is_digit(10) {
+            la.clear();
+            lb.clear();
+            la.push(a);
+            lb.push(b);
+            while let Some(digit_a) = la_iter.next() {
+                if digit_a.is_digit(10) {
+                    la.push(digit_a);
+                } else {
+                    break;
+                }
+            }
+            while let Some(digit_b) = lb_iter.next() {
+                if digit_b.is_digit(10) {
+                    lb.push(digit_b);
+                } else {
+                    break;
+                }
+            }
+            let aval = la.parse::<i32>().unwrap();
+            let bval = lb.parse::<i32>().unwrap();
+            if aval < bval {
+                res = Ordering::Less;
+                break;
+            }
+            if aval > bval {
+                res = Ordering::Greater;
+                break;
+            }
+        } else {
+            res = version_cmp_string(&a.to_string(), &b.to_string());
+            if res != Ordering::Equal {
+                break;
+            }
+        }
+    }
+    res
+}
+
+impl PartialOrd for Version {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        let self_norm = self.explicit();
+        let other_norm = other.explicit();
+        if self_norm.0 != other_norm.0 {
+            return Some(std::cmp::Ord::cmp(&self_norm.0, &other_norm.0));
+        }
+
+        if self.upstream_version != other.upstream_version {
+            return self.upstream_version.partial_cmp(&other.upstream_version);
+        }
+
+        match version_cmp_part(self_norm.1.as_str(), other_norm.1.as_str()) {
+            Ordering::Equal => (),
+            ordering => return Some(ordering),
+        }
+
+        Some(version_cmp_part(
+            self_norm.2.as_str(),
+            other_norm.2.as_str(),
+        ))
+    }
+}
+
+impl PartialEq for Version {
+    fn eq(&self, other: &Self) -> bool {
+        self.partial_cmp(other) == Some(std::cmp::Ordering::Equal)
+    }
+}
+
+impl Eq for Version {}
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct ParseError(String);
@@ -65,39 +172,27 @@ impl ToString for Version {
     }
 }
 
-impl PartialEq for Version {
-    fn eq(&self, other: &Self) -> bool {
-        let self_epoch = self.epoch.unwrap_or(0);
-        let other_epoch = other.epoch.unwrap_or(0);
-        if self_epoch != other_epoch {
-            return false;
-        }
-
-        if self.upstream_version != other.upstream_version {
-            return false;
-        }
-
-        let self_deb_revision = self.debian_revision.as_deref().unwrap_or("0");
-        let other_deb_revision = other.debian_revision.as_deref().unwrap_or("0");
-
-        self_deb_revision == other_deb_revision
-    }
-}
-
-impl Eq for Version {}
-
 impl Version {
+    /// Return explicit tuple of this version
+    ///
+    /// This will return an explicit 0 for epochs and debian revisions
+    /// that are not set.
+    fn explicit(&self) -> (u32, String, String) {
+        (
+            self.epoch.unwrap_or(0),
+            self.upstream_version.trim_start_matches('0').to_string(),
+            self.debian_revision.as_deref().unwrap_or("0").to_string(),
+        )
+    }
+
+    /// Return canonicalized version of this version
     pub fn canonicalize(&self) -> Version {
         let epoch = match self.epoch {
             Some(0) | None => None,
             Some(epoch) => Some(epoch),
         };
 
-        let upstream_version = self
-            .upstream_version
-            .strip_prefix('0')
-            .unwrap_or(&self.upstream_version)
-            .to_string();
+        let upstream_version = self.upstream_version.trim_start_matches('0');
 
         let debian_revision = match self.debian_revision.as_ref() {
             Some(r) if r.chars().all(|c| c == '0') => None,
@@ -107,7 +202,7 @@ impl Version {
 
         Version {
             epoch,
-            upstream_version,
+            upstream_version: upstream_version.to_string(),
             debian_revision,
         }
     }
@@ -131,6 +226,64 @@ mod tests {
             "0:1.0-2".parse::<Version>().unwrap().canonicalize(),
             "1.0-2".parse::<Version>().unwrap()
         );
+    }
+
+    #[test]
+    fn test_explicit() {
+        assert_eq!(
+            (0, "1.0".to_string(), "1".to_string()),
+            "1.0-1".parse::<Version>().unwrap().explicit()
+        );
+        assert_eq!(
+            (1, "1.0".to_string(), "1".to_string()),
+            "1:1.0-1".parse::<Version>().unwrap().explicit()
+        );
+        assert_eq!(
+            (0, "1.0".to_string(), "0".to_string()),
+            "1.0".parse::<Version>().unwrap().explicit()
+        );
+        assert_eq!(
+            (0, "1.0".to_string(), "0".to_string()),
+            "1.0-0".parse::<Version>().unwrap().explicit()
+        );
+        assert_eq!(
+            (1, "1.0".to_string(), "0".to_string()),
+            "1:1.0-0".parse::<Version>().unwrap().explicit()
+        );
+    }
+
+    macro_rules! assert_cmp(
+        ($a:expr, $b:expr, $cmp:tt) => {
+            assert_eq!($a.parse::<Version>().unwrap().cmp(&$b.parse::<Version>().unwrap()), std::cmp::Ordering::$cmp);
+        }
+    );
+
+    #[test]
+    fn test_cmp() {
+        assert_cmp!("1.0-1", "1.0-1", Equal);
+        assert_cmp!("1.0-1", "1.0-2", Less);
+        assert_cmp!("1.0-2", "1.0-1", Greater);
+        assert_cmp!("1.0-1", "1.0", Greater);
+        assert_cmp!("1.0", "1.0-1", Less);
+
+        // Epoch
+        assert_cmp!("1:1.0-1", "1.0-1", Greater);
+        assert_cmp!("1.0-1", "1:1.0-1", Less);
+        assert_cmp!("1:1.0-1", "1:1.0-1", Equal);
+        assert_cmp!("1:1.0-1", "2:1.0-1", Less);
+        assert_cmp!("2:1.0-1", "1:1.0-1", Greater);
+
+        // ~ symbol
+        assert_cmp!("1.0~rc1-1", "1.0-1", Greater);
+        assert_cmp!("1.0-1", "1.0~rc1-1", Less);
+        assert_cmp!("1.0~rc1-1", "1.0~rc1-1", Equal);
+        assert_cmp!("1.0~rc1-1", "1.0~rc2-1", Less);
+        assert_cmp!("1.0~rc2-1", "1.0~rc1-1", Greater);
+
+        // letters
+        assert_cmp!("1.0a-1", "1.0-1", Greater);
+        assert_cmp!("1.0-1", "1.0a-1", Less);
+        assert_cmp!("1.0a-1", "1.0a-1", Equal);
     }
 
     #[test]
