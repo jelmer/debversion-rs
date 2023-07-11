@@ -1,6 +1,24 @@
 //! Debian version type, consistent with Section 5.6.12 in the Debian Policy Manual
 //!
 //! This structure can be used for validating, dissecting and comparing Debian version strings.
+//!
+//! # Examples
+//!
+//! ```
+//! use debversion::Version;
+//!
+//! let version1: Version = "1.2.3".parse().unwrap();
+//! assert_eq!(version1.upstream_version.as_str(), "1.2.3");
+//! assert_eq!(version1.debian_revision, None);
+//! assert_eq!(version1.epoch, None);
+//!
+//! let version2: Version = "1:1.2.3".parse().unwrap();
+//! assert_eq!(version2.upstream_version.as_str(), "1.2.3");
+//! assert_eq!(version2.debian_revision, None);
+//! assert_eq!(version2.epoch, Some(1));
+//!
+//! assert_eq!(version1, version1);
+//! assert!(version1 < version2);
 
 use lazy_regex::regex;
 use std::cmp::Ordering;
@@ -9,7 +27,7 @@ use std::str::FromStr;
 /// A Debian version string
 ///
 ///
-#[derive(Debug, Clone, Ord)]
+#[derive(Debug, Clone)]
 pub struct Version {
     pub epoch: Option<u32>,
     pub upstream_version: String,
@@ -26,8 +44,8 @@ fn version_cmp_string(va: &str, vb: &str) -> Ordering {
         }
     }
 
-    let la: Vec<i32> = va.chars().map(|x| order(x)).collect();
-    let lb: Vec<i32> = vb.chars().map(|x| order(x)).collect();
+    let la: Vec<i32> = va.chars().map(order).collect();
+    let lb: Vec<i32> = vb.chars().map(order).collect();
     let mut la_iter = la.iter();
     let mut lb_iter = lb.iter();
     while la_iter.len() > 0 || lb_iter.len() > 0 {
@@ -51,20 +69,20 @@ fn version_cmp_part(va: &str, vb: &str) -> Ordering {
     let mut res = Ordering::Equal;
 
     while let (Some(a), Some(b)) = (la_iter.next(), lb_iter.next()) {
-        if a.is_digit(10) && b.is_digit(10) {
+        if a.is_ascii_digit() && b.is_ascii_digit() {
             la.clear();
             lb.clear();
             la.push(a);
             lb.push(b);
-            while let Some(digit_a) = la_iter.next() {
-                if digit_a.is_digit(10) {
+            for digit_a in la_iter.by_ref() {
+                if digit_a.is_ascii_digit() {
                     la.push(digit_a);
                 } else {
                     break;
                 }
             }
-            while let Some(digit_b) = lb_iter.next() {
-                if digit_b.is_digit(10) {
+            for digit_b in lb_iter.by_ref() {
+                if digit_b.is_ascii_digit() {
                     lb.push(digit_b);
                 } else {
                     break;
@@ -90,27 +108,30 @@ fn version_cmp_part(va: &str, vb: &str) -> Ordering {
     res
 }
 
-impl PartialOrd for Version {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+impl Ord for Version {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         let self_norm = self.explicit();
         let other_norm = other.explicit();
         if self_norm.0 != other_norm.0 {
-            return Some(std::cmp::Ord::cmp(&self_norm.0, &other_norm.0));
+            return std::cmp::Ord::cmp(&self_norm.0, &other_norm.0);
         }
 
         if self.upstream_version != other.upstream_version {
-            return self.upstream_version.partial_cmp(&other.upstream_version);
+            return self.upstream_version.cmp(&other.upstream_version);
         }
 
         match version_cmp_part(self_norm.1.as_str(), other_norm.1.as_str()) {
             Ordering::Equal => (),
-            ordering => return Some(ordering),
+            ordering => return ordering,
         }
 
-        Some(version_cmp_part(
-            self_norm.2.as_str(),
-            other_norm.2.as_str(),
-        ))
+        version_cmp_part(self_norm.2.as_str(), other_norm.2.as_str())
+    }
+}
+
+impl PartialOrd for Version {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
     }
 }
 
