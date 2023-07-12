@@ -250,7 +250,8 @@ impl Version {
 
 #[cfg(test)]
 mod tests {
-    use super::{ParseError, Version};
+    use super::{version_cmp_string, ParseError, Version};
+    use std::cmp::Ordering;
 
     #[test]
     fn test_canonicalize() {
@@ -297,6 +298,13 @@ mod tests {
             assert_eq!($a.parse::<Version>().unwrap().cmp(&$b.parse::<Version>().unwrap()), std::cmp::Ordering::$cmp);
         }
     );
+
+    #[test]
+    fn test_version_cmp_string() {
+        assert_eq!(version_cmp_string("1.0", "1.0"), Ordering::Equal);
+        assert_eq!(version_cmp_string("1.0", "2.0"), Ordering::Less);
+        assert_eq!(version_cmp_string("1.0", "0.0"), Ordering::Greater);
+    }
 
     #[test]
     fn test_cmp() {
@@ -410,6 +418,36 @@ mod tests {
         assert_eq!(hash1, hash2);
         assert_ne!(hash1, hash3);
     }
+
+    #[test]
+    fn to_string() {
+        assert_eq!(
+            "1.0-1",
+            Version {
+                epoch: None,
+                upstream_version: "1.0".to_string(),
+                debian_revision: Some("1".to_string())
+            }
+            .to_string()
+        );
+        assert_eq!(
+            "1.0",
+            Version {
+                epoch: None,
+                upstream_version: "1.0".to_string(),
+                debian_revision: None,
+            }
+            .to_string()
+        );
+    }
+
+    #[test]
+    fn partial_eq() {
+        assert!("1.0-1"
+            .parse::<Version>()
+            .unwrap()
+            .eq(&"1.0-1".parse::<Version>().unwrap()));
+    }
 }
 
 #[cfg(feature = "sqlx")]
@@ -436,5 +474,17 @@ impl sqlx::Decode<'_, Postgres> for Version {
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         let s: &str = sqlx::Decode::<Postgres>::decode(value)?;
         Ok(s.parse::<Version>()?)
+    }
+}
+
+#[cfg(all(feature = "sqlx", test))]
+mod sqlx_tests {
+    #[test]
+    fn type_info() {
+        use super::Version;
+        use sqlx::postgres::PgTypeInfo;
+        use sqlx::Type;
+
+        assert_eq!(PgTypeInfo::with_name("debversion"), Version::type_info());
     }
 }
