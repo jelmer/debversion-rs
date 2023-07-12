@@ -1,6 +1,6 @@
 [package]
 name = "debversion"
-version = "0.1.5"
+version = "0.1.6"
 edition = "2021"
 authors = ["Jelmer Vernooĳ <jelmer@debian.org>"]
 license = "Apache-2.0"
@@ -8,7 +8,7 @@ description = "Debian version parsing, manipulation and comparison"
 
 [features]
 default = []
-sqlx = ["dep:sqlx"]
+sqlx = ["sqlx/postgres"]
 
 [dependencies]
 lazy-regex = "3"
