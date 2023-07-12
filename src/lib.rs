@@ -425,7 +425,7 @@ impl sqlx::Type<Postgres> for Version {
 #[cfg(feature = "sqlx")]
 impl sqlx::Encode<'_, Postgres> for Version {
     fn encode_by_ref(&self, buf: &mut sqlx::postgres::PgArgumentBuffer) -> sqlx::encode::IsNull {
-        sqlx::Encode::encode_by_ref(&self.to_string().as_str(), buf)
+        sqlx::Encode::<Postgres>::encode_by_ref(&self.to_string().as_str(), buf)
     }
 }
 
@@ -434,7 +434,7 @@ impl sqlx::Decode<'_, Postgres> for Version {
     fn decode(
         value: sqlx::postgres::PgValueRef<'_>,
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-        let s: &str = sqlx::Decode::decode(value)?;
+        let s: &str = sqlx::Decode::<Postgres>::decode(value)?;
         Ok(s.parse::<Version>()?)
     }
 }
