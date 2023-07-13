@@ -31,3 +31,8 @@ assert!(version2 < version1);
 
 The `sqlx` feature adds serialization support for the postgres
 [debversion extension](https://pgxn.org/dist/debversion/) when using sqlx.
+
+### python-debian
+
+The `python-debian` feature provides conversion support between the debversion
+Rust type and the ``Version`` class provided by ``python-debian``.
