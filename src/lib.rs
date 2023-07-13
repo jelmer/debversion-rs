@@ -488,3 +488,94 @@ mod sqlx_tests {
         assert_eq!(PgTypeInfo::with_name("debversion"), Version::type_info());
     }
 }
+
+#[cfg(feature = "python-debian")]
+use pyo3::prelude::*;
+
+#[cfg(feature = "python-debian")]
+impl FromPyObject<'_> for Version {
+    fn extract(ob: &PyAny) -> PyResult<Self> {
+        let debian_support = Python::import(ob.py(), "debian.debian_support")?;
+        let version_cls = debian_support.getattr("Version")?;
+        if !ob.is_instance(version_cls)? {
+            return Err(pyo3::exceptions::PyTypeError::new_err("Expected a Version"));
+        }
+        Ok(Version {
+            epoch: ob
+                .getattr("epoch")?
+                .extract::<Option<String>>()?
+                .map(|s| s.parse().unwrap()),
+            upstream_version: ob.getattr("upstream_version")?.extract::<String>()?,
+            debian_revision: ob.getattr("debian_revision")?.extract::<Option<String>>()?,
+        })
+    }
+}
+
+#[cfg(feature = "python-debian")]
+impl ToPyObject for Version {
+    fn to_object(&self, py: Python) -> PyObject {
+        let debian_support = py.import("debian.debian_support").unwrap();
+        let version_cls = debian_support.getattr("Version").unwrap();
+        version_cls
+            .call1((self.to_string(),))
+            .unwrap()
+            .to_object(py)
+    }
+}
+
+#[cfg(feature = "python-debian")]
+impl IntoPy<PyObject> for Version {
+    fn into_py(self, py: Python) -> PyObject {
+        self.to_object(py)
+    }
+}
+
+#[cfg(feature = "python-debian")]
+mod python_tests {
+    #[test]
+    fn test_from_pyobject() {
+        use super::Version;
+        use pyo3::prelude::*;
+
+        Python::with_gil(|py| {
+            let globals = pyo3::types::PyDict::new(py);
+            globals
+                .set_item(
+                    "debian_support",
+                    py.import("debian.debian_support").unwrap(),
+                )
+                .unwrap();
+            let v = py
+                .eval("debian_support.Version('1.0-1')", Some(globals), None)
+                .unwrap()
+                .extract::<Version>()
+                .unwrap();
+            assert_eq!(
+                v,
+                Version {
+                    epoch: None,
+                    upstream_version: "1.0".to_string(),
+                    debian_revision: Some("1".to_string())
+                }
+            );
+        });
+    }
+
+    #[test]
+    fn test_to_pyobject() {
+        use super::Version;
+        use pyo3::prelude::*;
+
+        Python::with_gil(|py| {
+            let v = Version {
+                epoch: Some(1),
+                upstream_version: "1.0".to_string(),
+                debian_revision: Some("1".to_string()),
+            };
+            let v = v.to_object(py);
+            let expected: Version = "1:1.0-1".parse().unwrap();
+            assert_eq!(v.extract::<Version>(py).unwrap(), expected);
+            assert_eq!(v.as_ref(py).get_type().name().unwrap(), "Version");
+        });
+    }
+}
