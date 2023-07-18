@@ -36,3 +36,8 @@ The `sqlx` feature adds serialization support for the postgres
 
 The `python-debian` feature provides conversion support between the debversion
 Rust type and the ``Version`` class provided by ``python-debian``.
+
+### serde
+
+The `serde` feature enables serialization to and from simple strings when
+using serde.
