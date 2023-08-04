@@ -29,8 +29,13 @@ use std::str::FromStr;
 ///
 #[derive(Debug, Clone)]
 pub struct Version {
+    /// The epoch of the version, if any
     pub epoch: Option<u32>,
+
+    /// The upstream version
     pub upstream_version: String,
+
+    /// The Debian revision, if any
     pub debian_revision: Option<String>,
 }
 
@@ -61,6 +66,7 @@ fn version_cmp_string(va: &str, vb: &str) -> Ordering {
     Ordering::Equal
 }
 
+/// Compare two version string parts
 fn version_cmp_part(va: &str, vb: &str) -> Ordering {
     let mut la_iter = va.chars();
     let mut lb_iter = vb.chars();
