@@ -20,7 +20,7 @@
 //! assert_eq!(version1, version1);
 //! assert!(version1 < version2);
 
-use lazy_regex::regex;
+use lazy_regex::{regex_captures, regex_replace};
 use std::cmp::Ordering;
 use std::str::FromStr;
 
@@ -164,24 +164,28 @@ impl FromStr for Version {
     type Err = ParseError;
 
     fn from_str(text: &str) -> Result<Self, Self::Err> {
-        let c = regex!(
-            r"^((?P<epoch>\d+):)?(?P<upstream_version>[A-Za-z0-9.+:~-]+?)(-(?P<debian_revision>[A-Za-z0-9+.~]+))?$").captures(text).ok_or(ParseError("Invalid debian version".to_string()))?;
+        let (_, epoch, upstream_version, debian_revision) = match regex_captures!(
+            r"^(?:(\d+):)?([A-Za-z0-9.+:~-]+?)(?:-([A-Za-z0-9+.~]+))?$",
+            text
+        ) {
+            Some(c) => c,
+            None => return Err(ParseError(format!("Invalid version string: {}", text))),
+        };
 
-        let epoch = c
-            .name("epoch")
+        let epoch = Some(epoch)
+            .filter(|e| !e.is_empty())
             .map(|e| {
-                e.as_str()
-                    .parse()
+                e.parse()
                     .map_err(|e| ParseError(format!("Error parsing epoch: {}", e)))
             })
             .transpose()?;
-        let upstream_version = c.name("upstream_version").unwrap().as_str().to_string();
-        let debian_revision = c.name("debian_revision").map(|r| r.as_str().to_string());
+
+        let debian_revision = Some(debian_revision).filter(|e| !e.is_empty());
 
         Ok(Version {
             epoch,
-            upstream_version,
-            debian_revision,
+            upstream_version: upstream_version.to_string(),
+            debian_revision: debian_revision.map(|e| e.to_string()),
         })
     }
 }
@@ -250,6 +254,30 @@ impl Version {
             epoch,
             upstream_version: upstream_version.to_string(),
             debian_revision,
+        }
+    }
+
+    /// Increment the Debian revision.
+    ///
+    /// For native packages, increment the upstream version number.
+    /// For other packages, increment the debian revision.
+    pub fn increment_debian(&mut self) {
+        if self.debian_revision.is_some() {
+            self.debian_revision = self.debian_revision.as_ref().map(|v| {
+                {
+                    regex_replace!(r"\d+$", v, |x: &str| (x.parse::<i32>().unwrap() + 1)
+                        .to_string())
+                }
+                .to_string()
+            });
+        } else {
+            self.upstream_version =
+                regex_replace!(r"\d+$", self.upstream_version.as_ref(), |x: &str| (x
+                    .parse::<i32>()
+                    .unwrap()
+                    + 1)
+                .to_string())
+                .to_string();
         }
     }
 }
@@ -370,7 +398,7 @@ mod tests {
         );
         assert_eq!(
             "1:;a".parse::<Version>().unwrap_err(),
-            ParseError("Invalid debian version".to_string())
+            ParseError("Invalid version string: 1:;a".to_string())
         );
     }
 
@@ -453,6 +481,26 @@ mod tests {
             .parse::<Version>()
             .unwrap()
             .eq(&"1.0-1".parse::<Version>().unwrap()));
+    }
+
+    #[test]
+    fn increment() {
+        let mut v = "1.0-1".parse::<Version>().unwrap();
+        v.increment_debian();
+
+        assert_eq!("1.0-2".parse::<Version>().unwrap(), v);
+
+        let mut v = "1.0".parse::<Version>().unwrap();
+        v.increment_debian();
+        assert_eq!("1.1".parse::<Version>().unwrap(), v);
+
+        let mut v = "1.0ubuntu1".parse::<Version>().unwrap();
+        v.increment_debian();
+        assert_eq!("1.0ubuntu2".parse::<Version>().unwrap(), v);
+
+        let mut v = "1.0-0ubuntu1".parse::<Version>().unwrap();
+        v.increment_debian();
+        assert_eq!("1.0-0ubuntu2".parse::<Version>().unwrap(), v);
     }
 }
 
