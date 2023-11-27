@@ -654,3 +654,25 @@ impl<'de> serde::Deserialize<'de> for Version {
         concatenated.parse().map_err(serde::de::Error::custom)
     }
 }
+
+pub trait AsVersion {
+    fn as_version(self) -> Result<Version, ParseError>;
+}
+
+impl AsVersion for &str {
+    fn as_version(self) -> Result<Version, ParseError> {
+        self.parse()
+    }
+}
+
+impl AsVersion for String {
+    fn as_version(self) -> Result<Version, ParseError> {
+        self.parse()
+    }
+}
+
+impl AsVersion for Version {
+    fn as_version(self) -> Result<Version, ParseError> {
+        Ok(self.clone())
+    }
+}
