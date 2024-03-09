@@ -39,11 +39,11 @@ pub struct Version {
     pub debian_revision: Option<String>,
 }
 
-fn version_cmp_string(va: &str, vb: &str) -> Ordering {
+fn non_digit_cmp(va: &str, vb: &str) -> Ordering {
     fn order(x: char) -> i32 {
         match x {
             '~' => -1,
-            '0'..='9' => x.to_digit(10).unwrap_or(0) as i32 + 1,
+            '0'..='9' => unreachable!(),
             'A'..='Z' | 'a'..='z' => x as i32,
             _ => x as i32 + 256,
         }
@@ -66,52 +66,78 @@ fn version_cmp_string(va: &str, vb: &str) -> Ordering {
     Ordering::Equal
 }
 
-/// Compare two version string parts
-fn version_cmp_part(va: &str, vb: &str) -> Ordering {
-    let mut la_iter = va.chars();
-    let mut lb_iter = vb.chars();
-    let mut la = String::new();
-    let mut lb = String::new();
-    let mut res = Ordering::Equal;
+#[test]
+fn test_non_digit_cmp() {
+    assert_eq!(non_digit_cmp("a", "b"), Ordering::Less);
+    assert_eq!(non_digit_cmp("b", "a"), Ordering::Greater);
+    assert_eq!(non_digit_cmp("a", "a"), Ordering::Equal);
+    assert_eq!(non_digit_cmp("a", "-"), Ordering::Less);
+    assert_eq!(non_digit_cmp("a", "+"), Ordering::Less);
+    assert_eq!(non_digit_cmp("a", ""), Ordering::Greater);
+    assert_eq!(non_digit_cmp("", "a"), Ordering::Less);
+    assert_eq!(non_digit_cmp("", ""), Ordering::Equal);
+    assert_eq!(non_digit_cmp("~", ""), Ordering::Less);
+    assert_eq!(non_digit_cmp("~~", "~"), Ordering::Less);
+    assert_eq!(non_digit_cmp("~~", "~~a"), Ordering::Less);
+    assert_eq!(non_digit_cmp("~~a", "~"), Ordering::Less);
+    assert_eq!(non_digit_cmp("~", "a"), Ordering::Less);
+}
 
-    while let (Some(a), Some(b)) = (la_iter.next(), lb_iter.next()) {
-        if a.is_ascii_digit() && b.is_ascii_digit() {
-            la.clear();
-            lb.clear();
-            la.push(a);
-            lb.push(b);
-            for digit_a in la_iter.by_ref() {
-                if digit_a.is_ascii_digit() {
-                    la.push(digit_a);
-                } else {
-                    break;
-                }
-            }
-            for digit_b in lb_iter.by_ref() {
-                if digit_b.is_ascii_digit() {
-                    lb.push(digit_b);
-                } else {
-                    break;
-                }
-            }
-            let aval = la.parse::<i32>().unwrap();
-            let bval = lb.parse::<i32>().unwrap();
-            if aval < bval {
-                res = Ordering::Less;
-                break;
-            }
-            if aval > bval {
-                res = Ordering::Greater;
-                break;
-            }
-        } else {
-            res = version_cmp_string(&a.to_string(), &b.to_string());
-            if res != Ordering::Equal {
-                break;
-            }
+fn version_cmp_part(mut a: &str, mut b: &str) -> Ordering {
+    while !a.is_empty() || !b.is_empty() {
+        // First, create a slice for the non-digit leading part of each string
+        let a_non_digit = a
+            .chars()
+            .take_while(|c| !c.is_ascii_digit())
+            .collect::<String>();
+        let b_non_digit = b
+            .chars()
+            .take_while(|c| !c.is_ascii_digit())
+            .collect::<String>();
+
+        // Compare the non-digit leading part
+        match non_digit_cmp(&a_non_digit, &b_non_digit) {
+            Ordering::Equal => (),
+            ordering => return ordering,
         }
+
+        // Remove the non-digit leading part from the strings
+        a = &a[a_non_digit.len()..];
+        b = &b[b_non_digit.len()..];
+
+        // Then, create a slice for the digit part of each string
+        let a_digit = a
+            .chars()
+            .take_while(|c| c.is_ascii_digit())
+            .collect::<String>();
+        let b_digit = b
+            .chars()
+            .take_while(|c| c.is_ascii_digit())
+            .collect::<String>();
+
+        let a_num = if a_digit.is_empty() {
+            0
+        } else {
+            a_digit.parse::<i32>().unwrap()
+        };
+
+        let b_num = if b_digit.is_empty() {
+            0
+        } else {
+            b_digit.parse::<i32>().unwrap()
+        };
+
+        // Compare the digit part
+        match a_num.cmp(&b_num) {
+            Ordering::Equal => (),
+            ordering => return ordering,
+        }
+
+        // Remove the digit part from the strings
+        a = &a[a_digit.len()..];
+        b = &b[b_digit.len()..];
     }
-    res
+    Ordering::Equal
 }
 
 impl Ord for Version {
@@ -120,10 +146,6 @@ impl Ord for Version {
         let other_norm = other.explicit();
         if self_norm.0 != other_norm.0 {
             return std::cmp::Ord::cmp(&self_norm.0, &other_norm.0);
-        }
-
-        if self.upstream_version != other.upstream_version {
-            return self.upstream_version.cmp(&other.upstream_version);
         }
 
         match version_cmp_part(self_norm.1.as_str(), other_norm.1.as_str()) {
@@ -289,7 +311,7 @@ impl Version {
 
 #[cfg(test)]
 mod tests {
-    use super::{version_cmp_string, ParseError, Version};
+    use super::{version_cmp_part, ParseError, Version};
     use std::cmp::Ordering;
 
     #[test]
@@ -339,10 +361,12 @@ mod tests {
     );
 
     #[test]
-    fn test_version_cmp_string() {
-        assert_eq!(version_cmp_string("1.0", "1.0"), Ordering::Equal);
-        assert_eq!(version_cmp_string("1.0", "2.0"), Ordering::Less);
-        assert_eq!(version_cmp_string("1.0", "0.0"), Ordering::Greater);
+    fn test_version_cmp_part() {
+        assert_eq!(version_cmp_part("1.0", "1.0"), Ordering::Equal);
+        assert_eq!(version_cmp_part("1.0", "2.0"), Ordering::Less);
+        assert_eq!(version_cmp_part("1.0", "0.0"), Ordering::Greater);
+        assert_eq!(version_cmp_part("10.0", "2.0"), Ordering::Greater);
+        assert_eq!(version_cmp_part("1.0~rc1", "1.0"), Ordering::Less);
     }
 
     #[test]
@@ -352,6 +376,7 @@ mod tests {
         assert_cmp!("1.0-2", "1.0-1", Greater);
         assert_cmp!("1.0-1", "1.0", Greater);
         assert_cmp!("1.0", "1.0-1", Less);
+        assert_cmp!("2.50.0", "10.0.1", Less);
 
         // Epoch
         assert_cmp!("1:1.0-1", "1.0-1", Greater);
@@ -361,8 +386,8 @@ mod tests {
         assert_cmp!("2:1.0-1", "1:1.0-1", Greater);
 
         // ~ symbol
-        assert_cmp!("1.0~rc1-1", "1.0-1", Greater);
-        assert_cmp!("1.0-1", "1.0~rc1-1", Less);
+        assert_cmp!("1.0~rc1-1", "1.0-1", Less);
+        assert_cmp!("1.0-1", "1.0~rc1-1", Greater);
         assert_cmp!("1.0~rc1-1", "1.0~rc1-1", Equal);
         assert_cmp!("1.0~rc1-1", "1.0~rc2-1", Less);
         assert_cmp!("1.0~rc2-1", "1.0~rc1-1", Greater);
