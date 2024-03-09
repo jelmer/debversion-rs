@@ -85,18 +85,18 @@ fn test_non_digit_cmp() {
 
 fn version_cmp_part(mut a: &str, mut b: &str) -> Ordering {
     while !a.is_empty() || !b.is_empty() {
-        // First, create a slice for the non-digit leading part of each string
-        let a_non_digit = a
+        // First, create a for the non-digit leading part of each string
+        let a_non_digit = &a[..a
             .chars()
-            .take_while(|c| !c.is_ascii_digit())
-            .collect::<String>();
-        let b_non_digit = b
+            .position(|c| c.is_ascii_digit())
+            .unwrap_or(a.len())];
+        let b_non_digit = &b[..b
             .chars()
-            .take_while(|c| !c.is_ascii_digit())
-            .collect::<String>();
+            .position(|c| c.is_ascii_digit())
+            .unwrap_or(b.len())];
 
         // Compare the non-digit leading part
-        match non_digit_cmp(&a_non_digit, &b_non_digit) {
+        match non_digit_cmp(a_non_digit, b_non_digit) {
             Ordering::Equal => (),
             ordering => return ordering,
         }
@@ -106,14 +106,14 @@ fn version_cmp_part(mut a: &str, mut b: &str) -> Ordering {
         b = &b[b_non_digit.len()..];
 
         // Then, create a slice for the digit part of each string
-        let a_digit = a
+        let a_digit = &a[..a
             .chars()
-            .take_while(|c| c.is_ascii_digit())
-            .collect::<String>();
-        let b_digit = b
+            .position(|c| !c.is_ascii_digit())
+            .unwrap_or(a.len())];
+        let b_digit = &b[..b
             .chars()
-            .take_while(|c| c.is_ascii_digit())
-            .collect::<String>();
+            .position(|c| !c.is_ascii_digit())
+            .unwrap_or(b.len())];
 
         let a_num = if a_digit.is_empty() {
             0
