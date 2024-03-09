@@ -280,6 +280,11 @@ impl Version {
                 .to_string();
         }
     }
+
+    /// Return true if this is a native package
+    pub fn is_native(&self) -> bool {
+        self.debian_revision.is_none()
+    }
 }
 
 #[cfg(test)]
@@ -501,6 +506,13 @@ mod tests {
         let mut v = "1.0-0ubuntu1".parse::<Version>().unwrap();
         v.increment_debian();
         assert_eq!("1.0-0ubuntu2".parse::<Version>().unwrap(), v);
+    }
+
+    #[test]
+    fn is_native() {
+        assert!(!"1.0-1".parse::<Version>().unwrap().is_native());
+        assert!("1.0".parse::<Version>().unwrap().is_native());
+        assert!(!"1.0-0".parse::<Version>().unwrap().is_native());
     }
 }
 
