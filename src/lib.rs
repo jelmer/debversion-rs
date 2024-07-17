@@ -214,10 +214,10 @@ impl FromStr for Version {
 
 impl std::fmt::Display for Version {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        f.write_str(&self.upstream_version)?;
         if let Some(epoch) = self.epoch.as_ref() {
-            write!(f, ":{}", epoch)?;
+            write!(f, "{}:", epoch)?;
         }
+        f.write_str(&self.upstream_version)?;
         if let Some(debian_revision) = self.debian_revision.as_ref() {
             write!(f, "-{}", debian_revision)?;
         }
@@ -498,6 +498,15 @@ mod tests {
             "1.0",
             Version {
                 epoch: None,
+                upstream_version: "1.0".to_string(),
+                debian_revision: None,
+            }
+            .to_string()
+        );
+        assert_eq!(
+            "1:1.0",
+            Version {
+                epoch: Some(1),
                 upstream_version: "1.0".to_string(),
                 debian_revision: None,
             }
