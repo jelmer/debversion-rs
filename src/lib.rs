@@ -212,16 +212,16 @@ impl FromStr for Version {
     }
 }
 
-impl ToString for Version {
-    fn to_string(&self) -> String {
-        let mut ret = vec![self.upstream_version.clone()];
+impl std::fmt::Display for Version {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.write_str(&self.upstream_version)?;
         if let Some(epoch) = self.epoch.as_ref() {
-            ret.insert(0, format!("{}:", epoch));
+            write!(f, ":{}", epoch)?;
         }
         if let Some(debian_revision) = self.debian_revision.as_ref() {
-            ret.push(format!("-{}", debian_revision));
+            write!(f, "-{}", debian_revision)?;
         }
-        ret.concat()
+        Ok(())
     }
 }
 
