@@ -562,7 +562,10 @@ impl sqlx::Type<Postgres> for Version {
 
 #[cfg(feature = "sqlx")]
 impl sqlx::Encode<'_, Postgres> for Version {
-    fn encode_by_ref(&self, buf: &mut sqlx::postgres::PgArgumentBuffer) -> sqlx::encode::IsNull {
+    fn encode_by_ref(
+        &self,
+        buf: &mut sqlx::postgres::PgArgumentBuffer,
+    ) -> Result<sqlx::encode::IsNull, Box<dyn std::error::Error + Send + Sync>> {
         sqlx::Encode::<Postgres>::encode_by_ref(&self.to_string().as_str(), buf)
     }
 }
