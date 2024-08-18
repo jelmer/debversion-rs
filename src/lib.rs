@@ -24,6 +24,8 @@ use lazy_regex::{regex_captures, regex_replace};
 use std::cmp::Ordering;
 use std::str::FromStr;
 
+pub mod vendor;
+
 /// A Debian version string
 ///
 ///
