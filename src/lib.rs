@@ -87,6 +87,14 @@ fn test_non_digit_cmp() {
     assert_eq!(non_digit_cmp("~", "a"), Ordering::Less);
 }
 
+fn drop_leading_zeroes(mut s: &str) -> &str {
+    // Drop leading zeroes while the next character is a digit
+    while s.starts_with('0') && s.chars().nth(1).map_or(false, |c| c.is_ascii_digit()) {
+        s = &s[1..];
+    }
+    s
+}
+
 fn version_cmp_part(mut a: &str, mut b: &str) -> Ordering {
     while !a.is_empty() || !b.is_empty() {
         // First, create a for the non-digit leading part of each string
@@ -152,12 +160,12 @@ impl Ord for Version {
             return std::cmp::Ord::cmp(&self_norm.0, &other_norm.0);
         }
 
-        match version_cmp_part(self_norm.1.as_str(), other_norm.1.as_str()) {
+        match version_cmp_part(self_norm.1, other_norm.1) {
             Ordering::Equal => (),
             ordering => return ordering,
         }
 
-        version_cmp_part(self_norm.2.as_str(), other_norm.2.as_str())
+        version_cmp_part(self_norm.2, other_norm.2)
     }
 }
 
@@ -245,11 +253,11 @@ impl Version {
     ///
     /// This will return an explicit 0 for epochs and debian revisions
     /// that are not set.
-    fn explicit(&self) -> (u32, String, String) {
+    fn explicit(&self) -> (u32, &str, &str) {
         (
             self.epoch.unwrap_or(0),
-            self.upstream_version.trim_start_matches('0').to_string(),
-            self.debian_revision.as_deref().unwrap_or("0").to_string(),
+            self.upstream_version.as_str(),
+            self.debian_revision.as_deref().unwrap_or("0")
         )
     }
 
@@ -268,18 +276,20 @@ impl Version {
             Some(epoch) => Some(epoch),
         };
 
-        let upstream_version = self.upstream_version.trim_start_matches('0');
+        let mut upstream_version = self.upstream_version.as_str();
+
+        upstream_version = drop_leading_zeroes(upstream_version);
 
         let debian_revision = match self.debian_revision.as_ref() {
             Some(r) if r.chars().all(|c| c == '0') => None,
             None => None,
-            Some(revision) => Some(revision.clone()),
+            Some(revision) => Some(drop_leading_zeroes(revision)),
         };
 
         Version {
             epoch,
             upstream_version: upstream_version.to_string(),
-            debian_revision,
+            debian_revision: debian_revision.map(|r| r.to_string()),
         }
     }
 
@@ -332,29 +342,41 @@ mod tests {
             "0:1.0-2".parse::<Version>().unwrap().canonicalize(),
             "1.0-2".parse::<Version>().unwrap()
         );
+        assert_eq!(
+            "0001.0-0".parse::<Version>().unwrap().canonicalize(),
+            "1.0".parse::<Version>().unwrap()
+        );
+        assert_eq!(
+            "000.1".parse::<Version>().unwrap().canonicalize(),
+            "0.1".parse::<Version>().unwrap()
+        );
     }
 
     #[test]
     fn test_explicit() {
         assert_eq!(
-            (0, "1.0".to_string(), "1".to_string()),
+            (0, "1.0", "1"),
             "1.0-1".parse::<Version>().unwrap().explicit()
         );
         assert_eq!(
-            (1, "1.0".to_string(), "1".to_string()),
+            (1, "1.0", "1"),
             "1:1.0-1".parse::<Version>().unwrap().explicit()
         );
         assert_eq!(
-            (0, "1.0".to_string(), "0".to_string()),
+            (0, "1.0", "0"),
             "1.0".parse::<Version>().unwrap().explicit()
         );
         assert_eq!(
-            (0, "1.0".to_string(), "0".to_string()),
+            (0, "1.0", "0"),
             "1.0-0".parse::<Version>().unwrap().explicit()
         );
         assert_eq!(
-            (1, "1.0".to_string(), "0".to_string()),
+            (1, "1.0", "0"),
             "1:1.0-0".parse::<Version>().unwrap().explicit()
+        );
+        assert_eq!(
+            (0, "000.1", "0"),
+            "000.1".parse::<Version>().unwrap().explicit()
         );
     }
 
@@ -367,6 +389,8 @@ mod tests {
     #[test]
     fn test_version_cmp_part() {
         assert_eq!(version_cmp_part("1.0", "1.0"), Ordering::Equal);
+        assert_eq!(version_cmp_part("0.1", "0.1"), Ordering::Equal);
+        assert_eq!(version_cmp_part("000.1", "0.1"), Ordering::Equal);
         assert_eq!(version_cmp_part("1.0", "2.0"), Ordering::Less);
         assert_eq!(version_cmp_part("1.0", "0.0"), Ordering::Greater);
         assert_eq!(version_cmp_part("10.0", "2.0"), Ordering::Greater);
@@ -400,6 +424,9 @@ mod tests {
         assert_cmp!("1.0a-1", "1.0-1", Greater);
         assert_cmp!("1.0-1", "1.0a-1", Less);
         assert_cmp!("1.0a-1", "1.0a-1", Equal);
+
+        // Bug 27
+        assert_cmp!("23.13.9-7", "0.6.45-2", Greater);
     }
 
     #[test]
@@ -708,6 +735,7 @@ impl<'de> serde::Deserialize<'de> for Version {
     }
 }
 
+/// Trait for converting an argument into a Version
 pub trait AsVersion {
     fn as_version(self) -> Result<Version, ParseError>;
 }
