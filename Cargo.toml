@@ -7,8 +7,9 @@ license = "Apache-2.0"
 description = "Debian version parsing, manipulation and comparison"
 repository = "https://github.com/jelmer/debversion-rs"
 documentation = "https://docs.rs/debversion"
-keywords = ["debian", "version"]
+keywords = ["debian", "version", "dpkg"]
 homepage = "https://github.com/jelmer/debversion-rs"
+categories = ["parser-implementations"]
 
 [features]
 default = []
