@@ -1,8 +1,16 @@
-/// Ideally we wouldn't have a list like this, but unfortunately we do.
+//! Vendor enum and related functions.
+// Ideally we wouldn't have a list like this, but unfortunately we do.
+
+/// Vendor enum.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum Vendor {
+    /// Debian
     Debian,
+
+    /// Ubuntu (including derivatives)
     Ubuntu,
+
+    /// Kali Linux
     Kali,
 }
 
@@ -27,6 +35,7 @@ impl std::fmt::Display for Vendor {
     }
 }
 
+/// Get the initial Debian revision for a given vendor.
 pub fn initial_debian_revision(vendor: Vendor) -> &'static str {
     match vendor {
         Vendor::Debian => "1",

@@ -1,3 +1,4 @@
+#![deny(missing_docs)]
 //! Debian version type, consistent with Section 5.6.12 in the Debian Policy Manual
 //!
 //! This structure can be used for validating, dissecting and comparing Debian version strings.
@@ -183,6 +184,7 @@ impl PartialEq for Version {
 
 impl Eq for Version {}
 
+/// Error parsing a version string
 #[derive(Debug, PartialEq, Eq)]
 pub struct ParseError(String);
 
@@ -198,12 +200,13 @@ impl FromStr for Version {
     type Err = ParseError;
 
     fn from_str(text: &str) -> Result<Self, Self::Err> {
-        let (_, epoch, upstream_version, debian_revision) = match regex_captures!(
+        let (_, epoch, upstream_version, debian_revision) = if let Some(c) = regex_captures!(
             r"^(?:(\d+):)?([A-Za-z0-9.+:~-]+?)(?:-([A-Za-z0-9+.~]+))?$",
             text
         ) {
-            Some(c) => c,
-            None => return Err(ParseError(format!("Invalid version string: {}", text))),
+            c
+        } else {
+            return Err(ParseError(format!("Invalid version string: {}", text)));
         };
 
         let epoch = Some(epoch)
@@ -257,7 +260,7 @@ impl Version {
         (
             self.epoch.unwrap_or(0),
             self.upstream_version.as_str(),
-            self.debian_revision.as_deref().unwrap_or("0")
+            self.debian_revision.as_deref().unwrap_or("0"),
         )
     }
 
@@ -320,6 +323,184 @@ impl Version {
     /// Return true if this is a native package
     pub fn is_native(&self) -> bool {
         self.debian_revision.is_none()
+    }
+}
+
+#[cfg(feature = "sqlx")]
+use sqlx::{postgres::PgTypeInfo, Postgres};
+
+#[cfg(feature = "sqlx")]
+impl sqlx::Type<Postgres> for Version {
+    fn type_info() -> PgTypeInfo {
+        PgTypeInfo::with_name("debversion")
+    }
+}
+
+#[cfg(feature = "sqlx")]
+impl sqlx::Encode<'_, Postgres> for Version {
+    fn encode_by_ref(
+        &self,
+        buf: &mut sqlx::postgres::PgArgumentBuffer,
+    ) -> Result<sqlx::encode::IsNull, Box<dyn std::error::Error + Send + Sync>> {
+        sqlx::Encode::<Postgres>::encode_by_ref(&self.to_string().as_str(), buf)
+    }
+}
+
+#[cfg(feature = "sqlx")]
+impl sqlx::Decode<'_, Postgres> for Version {
+    fn decode(
+        value: sqlx::postgres::PgValueRef<'_>,
+    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        let s: &str = sqlx::Decode::<Postgres>::decode(value)?;
+        Ok(s.parse::<Version>()?)
+    }
+}
+
+#[cfg(all(feature = "sqlx", test))]
+mod sqlx_tests {
+    #[test]
+    fn type_info() {
+        use super::Version;
+        use sqlx::postgres::PgTypeInfo;
+        use sqlx::Type;
+
+        assert_eq!(PgTypeInfo::with_name("debversion"), Version::type_info());
+    }
+}
+
+#[cfg(feature = "python-debian")]
+use pyo3::prelude::*;
+
+#[cfg(feature = "python-debian")]
+impl FromPyObject<'_> for Version {
+    fn extract_bound(ob: &Bound<PyAny>) -> PyResult<Self> {
+        let debian_support = Python::import_bound(ob.py(), "debian.debian_support")?;
+        let version_cls = debian_support.getattr("Version")?;
+        if !ob.is_instance(&version_cls)? {
+            return Err(pyo3::exceptions::PyTypeError::new_err("Expected a Version"));
+        }
+        Ok(Version {
+            epoch: ob
+                .getattr("epoch")?
+                .extract::<Option<String>>()?
+                .map(|s| s.parse().unwrap()),
+            upstream_version: ob.getattr("upstream_version")?.extract::<String>()?,
+            debian_revision: ob.getattr("debian_revision")?.extract::<Option<String>>()?,
+        })
+    }
+}
+
+#[cfg(feature = "python-debian")]
+impl ToPyObject for Version {
+    fn to_object(&self, py: Python) -> PyObject {
+        let debian_support = py.import_bound("debian.debian_support").unwrap();
+        let version_cls = debian_support.getattr("Version").unwrap();
+        version_cls
+            .call1((self.to_string(),))
+            .unwrap()
+            .to_object(py)
+    }
+}
+
+#[cfg(feature = "python-debian")]
+impl IntoPy<PyObject> for Version {
+    fn into_py(self, py: Python) -> PyObject {
+        self.to_object(py)
+    }
+}
+
+#[cfg(feature = "python-debian")]
+mod python_tests {
+    #[test]
+    fn test_from_pyobject() {
+        use super::Version;
+        use pyo3::prelude::*;
+
+        Python::with_gil(|py| {
+            let globals = pyo3::types::PyDict::new_bound(py);
+            globals
+                .set_item(
+                    "debian_support",
+                    py.import_bound("debian.debian_support").unwrap(),
+                )
+                .unwrap();
+            let v = py
+                .eval_bound("debian_support.Version('1.0-1')", Some(&globals), None)
+                .unwrap()
+                .extract::<Version>()
+                .unwrap();
+            assert_eq!(
+                v,
+                Version {
+                    epoch: None,
+                    upstream_version: "1.0".to_string(),
+                    debian_revision: Some("1".to_string())
+                }
+            );
+        });
+    }
+
+    #[test]
+    fn test_to_pyobject() {
+        use super::Version;
+        use pyo3::prelude::*;
+
+        Python::with_gil(|py| {
+            let v = Version {
+                epoch: Some(1),
+                upstream_version: "1.0".to_string(),
+                debian_revision: Some("1".to_string()),
+            };
+            let v = v.to_object(py);
+            let expected: Version = "1:1.0-1".parse().unwrap();
+            assert_eq!(v.extract::<Version>(py).unwrap(), expected);
+            assert_eq!(v.bind(py).get_type().name().unwrap(), "Version");
+        });
+    }
+}
+
+#[cfg(feature = "serde")]
+impl serde::Serialize for Version {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&self.to_string())
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for Version {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let concatenated: String = String::deserialize(deserializer)?;
+        concatenated.parse().map_err(serde::de::Error::custom)
+    }
+}
+
+/// Trait for converting an argument into a Version
+pub trait AsVersion {
+    /// Convert the argument into a Version
+    fn into_version(self) -> Result<Version, ParseError>;
+}
+
+impl AsVersion for &str {
+    fn into_version(self) -> Result<Version, ParseError> {
+        self.parse()
+    }
+}
+
+impl AsVersion for String {
+    fn into_version(self) -> Result<Version, ParseError> {
+        self.parse()
+    }
+}
+
+impl AsVersion for Version {
+    fn into_version(self) -> Result<Version, ParseError> {
+        Ok(self.clone())
     }
 }
 
@@ -578,182 +759,5 @@ mod tests {
         assert!(!"1.0-1".parse::<Version>().unwrap().is_native());
         assert!("1.0".parse::<Version>().unwrap().is_native());
         assert!(!"1.0-0".parse::<Version>().unwrap().is_native());
-    }
-}
-
-#[cfg(feature = "sqlx")]
-use sqlx::{postgres::PgTypeInfo, Postgres};
-
-#[cfg(feature = "sqlx")]
-impl sqlx::Type<Postgres> for Version {
-    fn type_info() -> PgTypeInfo {
-        PgTypeInfo::with_name("debversion")
-    }
-}
-
-#[cfg(feature = "sqlx")]
-impl sqlx::Encode<'_, Postgres> for Version {
-    fn encode_by_ref(
-        &self,
-        buf: &mut sqlx::postgres::PgArgumentBuffer,
-    ) -> Result<sqlx::encode::IsNull, Box<dyn std::error::Error + Send + Sync>> {
-        sqlx::Encode::<Postgres>::encode_by_ref(&self.to_string().as_str(), buf)
-    }
-}
-
-#[cfg(feature = "sqlx")]
-impl sqlx::Decode<'_, Postgres> for Version {
-    fn decode(
-        value: sqlx::postgres::PgValueRef<'_>,
-    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-        let s: &str = sqlx::Decode::<Postgres>::decode(value)?;
-        Ok(s.parse::<Version>()?)
-    }
-}
-
-#[cfg(all(feature = "sqlx", test))]
-mod sqlx_tests {
-    #[test]
-    fn type_info() {
-        use super::Version;
-        use sqlx::postgres::PgTypeInfo;
-        use sqlx::Type;
-
-        assert_eq!(PgTypeInfo::with_name("debversion"), Version::type_info());
-    }
-}
-
-#[cfg(feature = "python-debian")]
-use pyo3::prelude::*;
-
-#[cfg(feature = "python-debian")]
-impl FromPyObject<'_> for Version {
-    fn extract_bound(ob: &Bound<PyAny>) -> PyResult<Self> {
-        let debian_support = Python::import_bound(ob.py(), "debian.debian_support")?;
-        let version_cls = debian_support.getattr("Version")?;
-        if !ob.is_instance(&version_cls)? {
-            return Err(pyo3::exceptions::PyTypeError::new_err("Expected a Version"));
-        }
-        Ok(Version {
-            epoch: ob
-                .getattr("epoch")?
-                .extract::<Option<String>>()?
-                .map(|s| s.parse().unwrap()),
-            upstream_version: ob.getattr("upstream_version")?.extract::<String>()?,
-            debian_revision: ob.getattr("debian_revision")?.extract::<Option<String>>()?,
-        })
-    }
-}
-
-#[cfg(feature = "python-debian")]
-impl ToPyObject for Version {
-    fn to_object(&self, py: Python) -> PyObject {
-        let debian_support = py.import_bound("debian.debian_support").unwrap();
-        let version_cls = debian_support.getattr("Version").unwrap();
-        version_cls
-            .call1((self.to_string(),))
-            .unwrap()
-            .to_object(py)
-    }
-}
-
-#[cfg(feature = "python-debian")]
-impl IntoPy<PyObject> for Version {
-    fn into_py(self, py: Python) -> PyObject {
-        self.to_object(py)
-    }
-}
-
-#[cfg(feature = "python-debian")]
-mod python_tests {
-    #[test]
-    fn test_from_pyobject() {
-        use super::Version;
-        use pyo3::prelude::*;
-
-        Python::with_gil(|py| {
-            let globals = pyo3::types::PyDict::new_bound(py);
-            globals
-                .set_item(
-                    "debian_support",
-                    py.import_bound("debian.debian_support").unwrap(),
-                )
-                .unwrap();
-            let v = py
-                .eval_bound("debian_support.Version('1.0-1')", Some(&globals), None)
-                .unwrap()
-                .extract::<Version>()
-                .unwrap();
-            assert_eq!(
-                v,
-                Version {
-                    epoch: None,
-                    upstream_version: "1.0".to_string(),
-                    debian_revision: Some("1".to_string())
-                }
-            );
-        });
-    }
-
-    #[test]
-    fn test_to_pyobject() {
-        use super::Version;
-        use pyo3::prelude::*;
-
-        Python::with_gil(|py| {
-            let v = Version {
-                epoch: Some(1),
-                upstream_version: "1.0".to_string(),
-                debian_revision: Some("1".to_string()),
-            };
-            let v = v.to_object(py);
-            let expected: Version = "1:1.0-1".parse().unwrap();
-            assert_eq!(v.extract::<Version>(py).unwrap(), expected);
-            assert_eq!(v.bind(py).get_type().name().unwrap(), "Version");
-        });
-    }
-}
-
-#[cfg(feature = "serde")]
-impl serde::Serialize for Version {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        serializer.serialize_str(&self.to_string())
-    }
-}
-
-#[cfg(feature = "serde")]
-impl<'de> serde::Deserialize<'de> for Version {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let concatenated: String = String::deserialize(deserializer)?;
-        concatenated.parse().map_err(serde::de::Error::custom)
-    }
-}
-
-/// Trait for converting an argument into a Version
-pub trait AsVersion {
-    fn as_version(self) -> Result<Version, ParseError>;
-}
-
-impl AsVersion for &str {
-    fn as_version(self) -> Result<Version, ParseError> {
-        self.parse()
-    }
-}
-
-impl AsVersion for String {
-    fn as_version(self) -> Result<Version, ParseError> {
-        self.parse()
-    }
-}
-
-impl AsVersion for Version {
-    fn as_version(self) -> Result<Version, ParseError> {
-        Ok(self.clone())
     }
 }

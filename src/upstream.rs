@@ -31,21 +31,33 @@ pub fn add_dfsg_suffix(upstream_version: &str, old_upstream_version: Option<&str
 }
 
 #[derive(Debug, Clone, PartialEq)]
+/// VCS snapshot information.
 pub enum VcsSnapshot {
+    /// Git snapshot information.
     Git {
+        /// Date of the snapshot.
         date: Option<chrono::NaiveDate>,
+
+        /// SHA of the snapshot, usually the first 7 characters.
         sha: Option<String>,
+
+        /// Snapshot number.
         snapshot: Option<usize>,
     },
+    /// Bazaar snapshot information.
     Bzr {
+        /// Revision number, possibly dotted.
         revno: String,
     },
+    /// Subversion snapshot information.
     Svn {
+        /// Revision number.
         revno: usize,
     },
 }
 
 impl VcsSnapshot {
+    /// Convert the VCS snapshot information to a suffix.
     fn to_suffix(&self) -> String {
         match self {
             VcsSnapshot::Git {
@@ -81,8 +93,12 @@ impl VcsSnapshot {
     }
 }
 
+/// Direction to add the snapshot.
 pub enum Direction {
+    /// Snapshot predates the version.
     Before,
+
+    /// Snapshot postdates the version.
     After,
 }
 
@@ -105,6 +121,7 @@ impl From<Direction> for &str {
     }
 }
 
+/// Get the revision from a version string.
 pub fn get_revision(version_string: &str) -> (&str, Option<(Direction, VcsSnapshot)>) {
     if let Some((_, b, s, r)) =
         lazy_regex::regex_captures!(r"^(.*)([\+~])bzr(\d+)$", version_string)
