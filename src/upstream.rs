@@ -5,6 +5,13 @@ static DFSG_REGEX: &lazy_regex::Lazy<lazy_regex::Regex> =
 const DFSG_DEFAULT_STYLE: &str = "+ds";
 
 /// Strip the DFSG suffix from a version.
+///
+/// # Example
+/// ```
+/// use debversion::upstream::strip_dfsg_suffix;
+/// let version = "1.2.3+dfsg1";
+/// assert_eq!(strip_dfsg_suffix(version), Some("1.2.3"));
+/// ```
 pub fn strip_dfsg_suffix(version: &str) -> Option<&str> {
     if let Some(m) = DFSG_REGEX.captures(version) {
         Some(m.get(1).unwrap().as_str())
@@ -17,6 +24,15 @@ pub fn strip_dfsg_suffix(version: &str) -> Option<&str> {
 ///
 /// Allow old_upstream_version to be passed in so optionally the format can be
 /// kept consistent.
+///
+/// # Example
+/// ```
+/// use debversion::upstream::add_dfsg_suffix;
+/// assert_eq!(add_dfsg_suffix("1.2.3", None), "1.2.3+ds");
+/// assert_eq!(add_dfsg_suffix("1.2.3", Some("1.2.2+dfsg1")), "1.2.3+dfsg1");
+/// assert_eq!(add_dfsg_suffix("1.2.3", Some("1.2.2+ds1")), "1.2.3+ds1");
+/// assert_eq!(add_dfsg_suffix("1.2.3", Some("1.2.3")), "1.2.3+ds");
+/// ```
 pub fn add_dfsg_suffix(upstream_version: &str, old_upstream_version: Option<&str>) -> String {
     let style = if let Some(m) = old_upstream_version.and_then(|d| DFSG_REGEX.captures(d)) {
         let mut style = m.get(2).unwrap().as_str().to_string() + m.get(3).unwrap().as_str();
@@ -94,6 +110,7 @@ impl VcsSnapshot {
 }
 
 /// Direction to add the snapshot.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Direction {
     /// Snapshot predates the version.
     Before,
@@ -122,6 +139,21 @@ impl From<Direction> for &str {
 }
 
 /// Get the revision from a version string.
+///
+/// # Example
+/// ```
+/// use debversion::upstream::{get_revision, Direction, VcsSnapshot};
+/// assert_eq!(get_revision("1.2.3+bzr123"), ("1.2.3", Some((Direction::After, VcsSnapshot::Bzr
+/// { revno: "123".to_string() }))));
+/// assert_eq!(get_revision("1.2.3+git20210101.abcdefa"), ("1.2.3",
+/// Some((Direction::After, VcsSnapshot::Git { date: Some(chrono::NaiveDate::from_ymd_opt(2021, 1,
+/// 1).unwrap()), sha: Some("abcdefa".to_string()), snapshot: None }))));
+/// assert_eq!(get_revision("1.2.3+git20210101.1.abcdefa"), ("1.2.3",
+/// Some((Direction::After, VcsSnapshot::Git { date: Some(chrono::NaiveDate::from_ymd_opt(2021, 1,
+/// 1).unwrap()), sha: Some("abcdefa".to_string()), snapshot: Some(1) }))));
+/// assert_eq!(get_revision("1.2.3+svn123"), ("1.2.3", Some((Direction::After,
+/// VcsSnapshot::Svn { revno: 123 }))));
+/// ```
 pub fn get_revision(version_string: &str) -> (&str, Option<(Direction, VcsSnapshot)>) {
     if let Some((_, b, s, r)) =
         lazy_regex::regex_captures!(r"^(.*)([\+~])bzr(\d+)$", version_string)
@@ -187,6 +219,21 @@ pub fn get_revision(version_string: &str) -> (&str, Option<(Direction, VcsSnapsh
 /// * `version_string` - Original version string
 /// * `sep` - Separator to use when adding snapshot
 /// * `vcs_snapshot` - VCS snapshot information
+///
+/// # Example
+/// ```
+/// use debversion::upstream::{upstream_version_add_revision, VcsSnapshot};
+/// assert_eq!(upstream_version_add_revision("1.2.3", VcsSnapshot::Bzr { revno:
+/// "123".to_string() }, None), "1.2.3+bzr123");
+/// assert_eq!(upstream_version_add_revision("1.2.3+bzr123", VcsSnapshot::Bzr { revno:
+/// "124".to_string() }, None), "1.2.3+bzr124");
+/// assert_eq!(upstream_version_add_revision("1.2.3", VcsSnapshot::Git { date:
+/// Some(chrono::NaiveDate::from_ymd_opt(2021, 1, 1).unwrap()), sha: None, snapshot: None }, None),
+/// "1.2.3+git20210101");
+/// assert_eq!(upstream_version_add_revision("1.2.3+git20210101.abcdefa",
+/// VcsSnapshot::Git { date: None, sha: Some("abcdefa".to_string()), snapshot: None }, None),
+/// "1.2.3+gitabcdefa");
+/// ```
 pub fn upstream_version_add_revision(
     version_string: &str,
     mut vcs_snapshot: VcsSnapshot,
@@ -278,28 +325,28 @@ mod tests {
             .to_suffix()
         );
         assert_eq!(
-            "gitabcdefg",
+            "gitabcdefa",
             super::VcsSnapshot::Git {
                 date: None,
-                sha: Some("abcdefg".to_string()),
+                sha: Some("abcdefa".to_string()),
                 snapshot: None,
             }
             .to_suffix()
         );
         assert_eq!(
-            "git20210101.abcdefg",
+            "git20210101.abcdefa",
             super::VcsSnapshot::Git {
                 date: Some(chrono::NaiveDate::from_ymd_opt(2021, 1, 1).unwrap()),
-                sha: Some("abcdefg".to_string()),
+                sha: Some("abcdefa".to_string()),
                 snapshot: None,
             }
             .to_suffix()
         );
         assert_eq!(
-            "git20210101.1.abcdefg",
+            "git20210101.1.abcdefa",
             super::VcsSnapshot::Git {
                 date: Some(chrono::NaiveDate::from_ymd_opt(2021, 1, 1).unwrap()),
-                sha: Some("abcdefg".to_string()),
+                sha: Some("abcdefa".to_string()),
                 snapshot: Some(1),
             }
             .to_suffix()
