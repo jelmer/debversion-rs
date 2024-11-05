@@ -1,25 +1,5 @@
 #![deny(missing_docs)]
-//! Debian version type, consistent with Section 5.6.12 in the Debian Policy Manual
-//!
-//! This structure can be used for validating, dissecting and comparing Debian version strings.
-//!
-//! # Examples
-//!
-//! ```
-//! use debversion::Version;
-//!
-//! let version1: Version = "1.2.3".parse().unwrap();
-//! assert_eq!(version1.upstream_version.as_str(), "1.2.3");
-//! assert_eq!(version1.debian_revision, None);
-//! assert_eq!(version1.epoch, None);
-//!
-//! let version2: Version = "1:1.2.3".parse().unwrap();
-//! assert_eq!(version2.upstream_version.as_str(), "1.2.3");
-//! assert_eq!(version2.debian_revision, None);
-//! assert_eq!(version2.epoch, Some(1));
-//!
-//! assert_eq!(version1, version1);
-//! assert!(version1 < version2);
+#![doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/README.md"))]
 
 use lazy_regex::{regex_captures, regex_replace};
 use std::cmp::Ordering;
