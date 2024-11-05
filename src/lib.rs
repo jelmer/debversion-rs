@@ -275,6 +275,33 @@ impl Version {
         }
     }
 
+    /// Create a binNMU version from this version
+    ///
+    /// This will increment the binNMU suffix by one, or add a `+b1` suffix if there is no binNMU
+    /// suffix.
+    pub fn increment_bin_nmu(&self) -> Version {
+        fn increment_bin_nmu_suffix(s: &str) -> String {
+            match s.split_once("+b") {
+                Some((prefix, rest)) => format!("{}+b{}", prefix, rest.parse::<i32>().unwrap() + 1),
+                None => format!("{}+b1", s),
+            }
+        }
+
+        if let Some(debian_revision) = self.debian_revision.as_ref() {
+            Version {
+                epoch: self.epoch,
+                upstream_version: self.upstream_version.clone(),
+                debian_revision: Some(increment_bin_nmu_suffix(debian_revision)),
+            }
+        } else {
+            Version {
+                epoch: self.epoch,
+                upstream_version: increment_bin_nmu_suffix(self.upstream_version.as_str()),
+                debian_revision: None,
+            }
+        }
+    }
+
     /// Return canonicalized version of this version
     ///
     /// # Examples
@@ -778,5 +805,25 @@ mod tests {
         assert!("1.0-1+b1".parse::<Version>().unwrap().is_bin_nmu());
         assert!(!"1.0-1".parse::<Version>().unwrap().is_bin_nmu());
         assert!(!"1.0".parse::<Version>().unwrap().is_bin_nmu());
+    }
+
+    #[test]
+    fn test_increment_bin_nmu() {
+        assert_eq!(
+            "1.0+b2".parse::<Version>().unwrap(),
+            "1.0+b1".parse::<Version>().unwrap().increment_bin_nmu()
+        );
+        assert_eq!(
+            "1.0-1+b2".parse::<Version>().unwrap(),
+            "1.0-1+b1".parse::<Version>().unwrap().increment_bin_nmu()
+        );
+        assert_eq!(
+            "1.0+b1".parse::<Version>().unwrap(),
+            "1.0".parse::<Version>().unwrap().increment_bin_nmu()
+        );
+        assert_eq!(
+            "1.0-1+b1".parse::<Version>().unwrap(),
+            "1.0-1".parse::<Version>().unwrap().increment_bin_nmu()
+        );
     }
 }
