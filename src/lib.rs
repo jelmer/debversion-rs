@@ -262,16 +262,23 @@ impl Version {
     /// assert!(!"1.0".parse::<Version>().unwrap().is_bin_nmu());
     /// ```
     pub fn is_bin_nmu(&self) -> bool {
-        fn has_bin_nmu_suffix(s: &str) -> bool {
+        self.bin_nmu_count().is_some()
+    }
+
+    /// Return the binNMU count of this version
+    ///
+    /// This will return the binNMU count of this version, or None if this is not a binNMU.
+    pub fn bin_nmu_count(&self) -> Option<i32> {
+        fn bin_nmu_suffix(s: &str) -> Option<i32> {
             match s.split_once("+b") {
-                Some((_, rest)) => rest.chars().all(|c| c.is_ascii_digit()),
-                None => false,
+                Some((_, rest)) => Some(rest.parse().unwrap()),
+                None => None,
             }
         }
         if let Some(debian_revision) = self.debian_revision.as_ref() {
-            has_bin_nmu_suffix(debian_revision)
+            bin_nmu_suffix(debian_revision)
         } else {
-            has_bin_nmu_suffix(self.upstream_version.as_str())
+            bin_nmu_suffix(self.upstream_version.as_str())
         }
     }
 
@@ -299,6 +306,34 @@ impl Version {
                 upstream_version: increment_bin_nmu_suffix(self.upstream_version.as_str()),
                 debian_revision: None,
             }
+        }
+    }
+
+    /// Check if this version is a sourceful NMU
+    ///
+    /// A sourceful NMU is a Non-Maintainer Upload where the source package is changed.
+    /// This is indicated by the presence of a `+nmu[:digit:]` suffix.
+    /// This is not part of the Debian Policy Manual, but it is commonly used to indicate a
+    /// sourceful NMU.
+    pub fn is_nmu(&self) -> bool {
+        self.nmu_count().is_some()
+    }
+
+    /// Return the sourceful NMU count of this version
+    ///
+    /// This will return the sourceful NMU count of this version, or None if this is not a
+    /// sourceful NMU.
+    pub fn nmu_count(&self) -> Option<i32> {
+        fn nmu_suffix(s: &str) -> Option<i32> {
+            match s.split_once("+nmu") {
+                Some((_, rest)) => Some(rest.parse().unwrap()),
+                None => None,
+            }
+        }
+        if let Some(debian_revision) = self.debian_revision.as_ref() {
+            nmu_suffix(debian_revision)
+        } else {
+            nmu_suffix(self.upstream_version.as_str())
         }
     }
 
@@ -808,6 +843,14 @@ mod tests {
     }
 
     #[test]
+    fn test_bin_nmu_count() {
+        assert_eq!(Some(1), "1.0+b1".parse::<Version>().unwrap().bin_nmu_count());
+        assert_eq!(Some(1), "1.0-1+b1".parse::<Version>().unwrap().bin_nmu_count());
+        assert_eq!(None, "1.0-1".parse::<Version>().unwrap().bin_nmu_count());
+        assert_eq!(None, "1.0".parse::<Version>().unwrap().bin_nmu_count());
+    }
+
+    #[test]
     fn test_increment_bin_nmu() {
         assert_eq!(
             "1.0+b2".parse::<Version>().unwrap(),
@@ -825,5 +868,21 @@ mod tests {
             "1.0-1+b1".parse::<Version>().unwrap(),
             "1.0-1".parse::<Version>().unwrap().increment_bin_nmu()
         );
+    }
+
+    #[test]
+    fn test_nmu_count() {
+        assert_eq!(Some(1), "1.0+nmu1".parse::<Version>().unwrap().nmu_count());
+        assert_eq!(Some(1), "1.0-1+nmu1".parse::<Version>().unwrap().nmu_count());
+        assert_eq!(None, "1.0-1".parse::<Version>().unwrap().nmu_count());
+        assert_eq!(None, "1.0".parse::<Version>().unwrap().nmu_count());
+    }
+
+    #[test]
+    fn test_is_nmu() {
+        assert!("1.0+nmu1".parse::<Version>().unwrap().is_nmu());
+        assert!("1.0-1+nmu1".parse::<Version>().unwrap().is_nmu());
+        assert!(!"1.0-1".parse::<Version>().unwrap().is_nmu());
+        assert!(!"1.0".parse::<Version>().unwrap().is_nmu());
     }
 }
