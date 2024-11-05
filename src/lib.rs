@@ -271,6 +271,16 @@ impl Version {
     ///
     /// Note that this checks for the presence of the `+b[:digit:]` suffix, which is not part of the Debian
     /// Policy Manual, but it is commonly used to indicate a binNMU.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use debversion::Version;
+    /// assert!("1.0+b1".parse::<Version>().unwrap().is_bin_nmu());
+    /// assert!("1.0-1+b1".parse::<Version>().unwrap().is_bin_nmu());
+    /// assert!(!"1.0-1".parse::<Version>().unwrap().is_bin_nmu());
+    /// assert!(!"1.0".parse::<Version>().unwrap().is_bin_nmu());
+    /// ```
     pub fn is_bin_nmu(&self) -> bool {
         fn has_bin_nmu_suffix(s: &str) -> bool {
             match s.split_once("+b") {
