@@ -264,6 +264,27 @@ impl Version {
         )
     }
 
+    /// Is this a binNMU?
+    ///
+    /// A binNMU is a binary-only NMU (Non-Maintainer Upload) where the source package is not
+    /// changed.
+    ///
+    /// Note that this checks for the presence of the `+b[:digit:]` suffix, which is not part of the Debian
+    /// Policy Manual, but it is commonly used to indicate a binNMU.
+    pub fn is_bin_nmu(&self) -> bool {
+        fn has_bin_nmu_suffix(s: &str) -> bool {
+            match s.split_once("+b") {
+                Some((_, rest)) => rest.chars().all(|c| c.is_ascii_digit()),
+                None => false,
+            }
+        }
+        if let Some(debian_revision) = self.debian_revision.as_ref() {
+            has_bin_nmu_suffix(debian_revision)
+        } else {
+            has_bin_nmu_suffix(self.upstream_version.as_str())
+        }
+    }
+
     /// Return canonicalized version of this version
     ///
     /// # Examples
@@ -759,5 +780,13 @@ mod tests {
         assert!(!"1.0-1".parse::<Version>().unwrap().is_native());
         assert!("1.0".parse::<Version>().unwrap().is_native());
         assert!(!"1.0-0".parse::<Version>().unwrap().is_native());
+    }
+
+    #[test]
+    fn test_is_binnmu() {
+        assert!("1.0+b1".parse::<Version>().unwrap().is_bin_nmu());
+        assert!("1.0-1+b1".parse::<Version>().unwrap().is_bin_nmu());
+        assert!(!"1.0-1".parse::<Version>().unwrap().is_bin_nmu());
+        assert!(!"1.0".parse::<Version>().unwrap().is_bin_nmu());
     }
 }
