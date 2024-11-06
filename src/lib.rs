@@ -844,8 +844,14 @@ mod tests {
 
     #[test]
     fn test_bin_nmu_count() {
-        assert_eq!(Some(1), "1.0+b1".parse::<Version>().unwrap().bin_nmu_count());
-        assert_eq!(Some(1), "1.0-1+b1".parse::<Version>().unwrap().bin_nmu_count());
+        assert_eq!(
+            Some(1),
+            "1.0+b1".parse::<Version>().unwrap().bin_nmu_count()
+        );
+        assert_eq!(
+            Some(1),
+            "1.0-1+b1".parse::<Version>().unwrap().bin_nmu_count()
+        );
         assert_eq!(None, "1.0-1".parse::<Version>().unwrap().bin_nmu_count());
         assert_eq!(None, "1.0".parse::<Version>().unwrap().bin_nmu_count());
     }
@@ -873,7 +879,10 @@ mod tests {
     #[test]
     fn test_nmu_count() {
         assert_eq!(Some(1), "1.0+nmu1".parse::<Version>().unwrap().nmu_count());
-        assert_eq!(Some(1), "1.0-1+nmu1".parse::<Version>().unwrap().nmu_count());
+        assert_eq!(
+            Some(1),
+            "1.0-1+nmu1".parse::<Version>().unwrap().nmu_count()
+        );
         assert_eq!(None, "1.0-1".parse::<Version>().unwrap().nmu_count());
         assert_eq!(None, "1.0".parse::<Version>().unwrap().nmu_count());
     }
