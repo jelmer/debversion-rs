@@ -11,17 +11,17 @@ Example:
 ```rust
 use debversion::Version;
 
-let version: Version = "1.0-1".parse()?;
-assert_eq!(version.epoch, Some(0));
+let version: Version = "1.0-1".parse().unwrap();
+assert_eq!(version.epoch, None);
 assert_eq!(version.upstream_version, "1.0");
-assert_eq!(version.debian_revision, Some("1"));
+assert_eq!(version.debian_revision.as_deref(), Some("1"));
 
-let version1: Version = "1.0-0".parse()?;
-let version2: Version = "1.0".parse()?;
+let version1: Version = "1.0-0".parse().unwrap();
+let version2: Version = "1.0".parse().unwrap();
 assert_eq!(version1, version2);
 
-let version1: Version = "1.0-1".parse()?;
-let version2: Version = "1.0~alpha1-1".parse()?;
+let version1: Version = "1.0-1".parse().unwrap();
+let version2: Version = "1.0~alpha1-1".parse().unwrap();
 assert!(version2 < version1);
 ```
 
