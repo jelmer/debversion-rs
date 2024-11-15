@@ -1,5 +1,5 @@
 //! Version Control System (VCS) related utilities.
-use crate::Version;
+use create::Version;
 
 /// Mangle a version string to be used as a git tag.
 ///
