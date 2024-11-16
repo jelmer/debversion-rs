@@ -1,5 +1,7 @@
 #![deny(missing_docs)]
 #![doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/README.md"))]
+// Until we drop support for PyO3 0.22
+#![allow(deprecated)]
 
 use lazy_regex::{regex_captures, regex_replace};
 use std::cmp::Ordering;
