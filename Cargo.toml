@@ -22,7 +22,7 @@ chrono = { version = "0.4.38", default-features = false, features = ["alloc"] }
 lazy-regex = ">=2"
 
 [dependencies.pyo3]
-version = ">=0.22, <0.25"
+version = ">=0.22, <0.26"
 optional = true
 
 [dependencies.sqlx]
