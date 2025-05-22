@@ -449,7 +449,7 @@ use pyo3::prelude::*;
 #[cfg(feature = "python-debian")]
 impl FromPyObject<'_> for Version {
     fn extract_bound(ob: &Bound<PyAny>) -> PyResult<Self> {
-        let debian_support = Python::import_bound(ob.py(), "debian.debian_support")?;
+        let debian_support = Python::import(ob.py(), "debian.debian_support")?;
         let version_cls = debian_support.getattr("Version")?;
         if !ob.is_instance(&version_cls)? {
             return Err(pyo3::exceptions::PyTypeError::new_err("Expected a Version"));
@@ -466,21 +466,17 @@ impl FromPyObject<'_> for Version {
 }
 
 #[cfg(feature = "python-debian")]
-impl ToPyObject for Version {
-    fn to_object(&self, py: Python) -> PyObject {
-        let debian_support = py.import_bound("debian.debian_support").unwrap();
-        let version_cls = debian_support.getattr("Version").unwrap();
-        version_cls
-            .call1((self.to_string(),))
-            .unwrap()
-            .to_object(py)
-    }
-}
+impl<'py> IntoPyObject<'py> for Version {
+    type Target = PyAny;
 
-#[cfg(feature = "python-debian")]
-impl IntoPy<PyObject> for Version {
-    fn into_py(self, py: Python) -> PyObject {
-        self.to_object(py)
+    type Output = Bound<'py, Self::Target>;
+
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        let debian_support = py.import("debian.debian_support").unwrap();
+        let version_cls = debian_support.getattr("Version").unwrap();
+        version_cls.call1((self.to_string(),))
     }
 }
 
@@ -490,17 +486,22 @@ mod python_tests {
     fn test_from_pyobject() {
         use super::Version;
         use pyo3::prelude::*;
+        use std::ffi::CString;
 
         Python::with_gil(|py| {
-            let globals = pyo3::types::PyDict::new_bound(py);
+            let globals = pyo3::types::PyDict::new(py);
             globals
                 .set_item(
                     "debian_support",
-                    py.import_bound("debian.debian_support").unwrap(),
+                    py.import("debian.debian_support").unwrap(),
                 )
                 .unwrap();
             let v = py
-                .eval_bound("debian_support.Version('1.0-1')", Some(&globals), None)
+                .eval(
+                    &CString::new("debian_support.Version('1.0-1')").unwrap(),
+                    Some(&globals),
+                    None,
+                )
                 .unwrap()
                 .extract::<Version>()
                 .unwrap();
@@ -526,10 +527,10 @@ mod python_tests {
                 upstream_version: "1.0".to_string(),
                 debian_revision: Some("1".to_string()),
             };
-            let v = v.to_object(py);
+            let v = v.into_pyobject(py).unwrap();
             let expected: Version = "1:1.0-1".parse().unwrap();
-            assert_eq!(v.extract::<Version>(py).unwrap(), expected);
-            assert_eq!(v.bind(py).get_type().name().unwrap(), "Version");
+            assert_eq!(v.get_type().name().unwrap(), "Version");
+            assert_eq!(v.unbind().extract::<Version>(py).unwrap(), expected);
         });
     }
 }
