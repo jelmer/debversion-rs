@@ -4,6 +4,7 @@
 #![allow(deprecated)]
 
 use lazy_regex::{regex_captures, regex_replace};
+use num_bigint::BigInt;
 use std::cmp::Ordering;
 use std::str::FromStr;
 
@@ -111,15 +112,15 @@ fn version_cmp_part(mut a: &str, mut b: &str) -> Ordering {
             .unwrap_or(b.len())];
 
         let a_num = if a_digit.is_empty() {
-            0
+            BigInt::ZERO
         } else {
-            a_digit.parse::<i32>().unwrap()
+            a_digit.parse::<BigInt>().unwrap()
         };
 
         let b_num = if b_digit.is_empty() {
-            0
+            BigInt::ZERO
         } else {
-            b_digit.parse::<i32>().unwrap()
+            b_digit.parse::<BigInt>().unwrap()
         };
 
         // Compare the digit part
@@ -896,5 +897,13 @@ mod tests {
         assert!("1.0-1+nmu1".parse::<Version>().unwrap().is_nmu());
         assert!(!"1.0-1".parse::<Version>().unwrap().is_nmu());
         assert!(!"1.0".parse::<Version>().unwrap().is_nmu());
+    }
+
+    #[test]
+    fn test_comparing_very_long_versions() {
+        // These are actual version numbers seen in actual apt repositories
+        let a = "1:11.1.0~++20210314110124+1fdec59bffc1-1~exp1~20210314220751.162";
+        let b = "1:11.1.0~++20211011013104+1fdec59bffc1-1~exp1~20211011133507.6";
+        assert_cmp!(a, b, Less);
     }
 }
