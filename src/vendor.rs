@@ -14,13 +14,27 @@ pub enum Vendor {
     Kali,
 }
 
-impl From<&str> for Vendor {
-    fn from(s: &str) -> Self {
+/// Error type for unknown vendor
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnknownVendorError(String);
+
+impl std::fmt::Display for UnknownVendorError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Unknown vendor: {}", self.0)
+    }
+}
+
+impl std::error::Error for UnknownVendorError {}
+
+impl std::str::FromStr for Vendor {
+    type Err = UnknownVendorError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "debian" | "Debian" => Vendor::Debian,
-            "ubuntu" | "Ubuntu" => Vendor::Ubuntu,
-            "kali" | "Kali" => Vendor::Kali,
-            _ => panic!("Unknown vendor"),
+            "debian" | "Debian" => Ok(Vendor::Debian),
+            "ubuntu" | "Ubuntu" => Ok(Vendor::Ubuntu),
+            "kali" | "Kali" => Ok(Vendor::Kali),
+            _ => Err(UnknownVendorError(s.to_string())),
         }
     }
 }
@@ -50,12 +64,20 @@ mod tests {
 
     #[test]
     fn test_vendor_from_str() {
-        assert_eq!(Vendor::from("debian"), Vendor::Debian);
-        assert_eq!(Vendor::from("Debian"), Vendor::Debian);
-        assert_eq!(Vendor::from("ubuntu"), Vendor::Ubuntu);
-        assert_eq!(Vendor::from("Ubuntu"), Vendor::Ubuntu);
-        assert_eq!(Vendor::from("kali"), Vendor::Kali);
-        assert_eq!(Vendor::from("Kali"), Vendor::Kali);
+        use std::str::FromStr;
+
+        assert_eq!(Vendor::from_str("debian").unwrap(), Vendor::Debian);
+        assert_eq!(Vendor::from_str("Debian").unwrap(), Vendor::Debian);
+        assert_eq!(Vendor::from_str("ubuntu").unwrap(), Vendor::Ubuntu);
+        assert_eq!(Vendor::from_str("Ubuntu").unwrap(), Vendor::Ubuntu);
+        assert_eq!(Vendor::from_str("kali").unwrap(), Vendor::Kali);
+        assert_eq!(Vendor::from_str("Kali").unwrap(), Vendor::Kali);
+
+        assert!(Vendor::from_str("unknown").is_err());
+        assert_eq!(
+            Vendor::from_str("unknown").unwrap_err().to_string(),
+            "Unknown vendor: unknown"
+        );
     }
 
     #[test]

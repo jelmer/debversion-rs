@@ -37,21 +37,16 @@ fn non_digit_cmp(va: &str, vb: &str) -> Ordering {
         }
     }
 
-    let la: Vec<i32> = va.chars().map(order).collect();
-    let lb: Vec<i32> = vb.chars().map(order).collect();
-    let mut la_iter = la.iter();
-    let mut lb_iter = lb.iter();
-    while la_iter.len() > 0 || lb_iter.len() > 0 {
-        let a = if let Some(a) = la_iter.next() { *a } else { 0 };
-        let b = if let Some(b) = lb_iter.next() { *b } else { 0 };
-        if a < b {
-            return Ordering::Less;
-        }
-        if a > b {
-            return Ordering::Greater;
-        }
-    }
-    Ordering::Equal
+    va.chars()
+        .map(order)
+        .chain(std::iter::repeat(0))
+        .zip(vb.chars().map(order).chain(std::iter::repeat(0)))
+        .take(va.len().max(vb.len()))
+        .find_map(|(a, b)| match a.cmp(&b) {
+            Ordering::Equal => None,
+            other => Some(other),
+        })
+        .unwrap_or(Ordering::Equal)
 }
 
 #[test]
@@ -73,7 +68,7 @@ fn test_non_digit_cmp() {
 
 fn drop_leading_zeroes(mut s: &str) -> &str {
     // Drop leading zeroes while the next character is a digit
-    while s.starts_with('0') && s.chars().nth(1).map_or(false, |c| c.is_ascii_digit()) {
+    while s.starts_with('0') && s.chars().nth(1).is_some_and(|c| c.is_ascii_digit()) {
         s = &s[1..];
     }
     s
@@ -205,7 +200,7 @@ impl FromStr for Version {
         Ok(Version {
             epoch,
             upstream_version: upstream_version.to_string(),
-            debian_revision: debian_revision.map(|e| e.to_string()),
+            debian_revision: debian_revision.map(String::from),
         })
     }
 }
@@ -273,10 +268,7 @@ impl Version {
     /// This will return the binNMU count of this version, or None if this is not a binNMU.
     pub fn bin_nmu_count(&self) -> Option<i32> {
         fn bin_nmu_suffix(s: &str) -> Option<i32> {
-            match s.split_once("+b") {
-                Some((_, rest)) => Some(rest.parse().unwrap()),
-                None => None,
-            }
+            s.split_once("+b").and_then(|(_, rest)| rest.parse().ok())
         }
         if let Some(debian_revision) = self.debian_revision.as_ref() {
             bin_nmu_suffix(debian_revision)
@@ -292,7 +284,13 @@ impl Version {
     pub fn increment_bin_nmu(&self) -> Version {
         fn increment_bin_nmu_suffix(s: &str) -> String {
             match s.split_once("+b") {
-                Some((prefix, rest)) => format!("{}+b{}", prefix, rest.parse::<i32>().unwrap() + 1),
+                Some((prefix, rest)) => {
+                    if let Ok(num) = rest.parse::<i32>() {
+                        format!("{}+b{}", prefix, num + 1)
+                    } else {
+                        format!("{}+b1", s)
+                    }
+                }
                 None => format!("{}+b1", s),
             }
         }
@@ -306,7 +304,7 @@ impl Version {
         } else {
             Version {
                 epoch: self.epoch,
-                upstream_version: increment_bin_nmu_suffix(self.upstream_version.as_str()),
+                upstream_version: increment_bin_nmu_suffix(&self.upstream_version),
                 debian_revision: None,
             }
         }
@@ -328,10 +326,7 @@ impl Version {
     /// sourceful NMU.
     pub fn nmu_count(&self) -> Option<i32> {
         fn nmu_suffix(s: &str) -> Option<i32> {
-            match s.split_once("+nmu") {
-                Some((_, rest)) => Some(rest.parse().unwrap()),
-                None => None,
-            }
+            s.split_once("+nmu").and_then(|(_, rest)| rest.parse().ok())
         }
         if let Some(debian_revision) = self.debian_revision.as_ref() {
             nmu_suffix(debian_revision)
@@ -368,7 +363,7 @@ impl Version {
         Version {
             epoch,
             upstream_version: upstream_version.to_string(),
-            debian_revision: debian_revision.map(|r| r.to_string()),
+            debian_revision: debian_revision.map(String::from),
         }
     }
 
@@ -418,7 +413,8 @@ impl sqlx::Encode<'_, Postgres> for Version {
         &self,
         buf: &mut sqlx::postgres::PgArgumentBuffer,
     ) -> Result<sqlx::encode::IsNull, Box<dyn std::error::Error + Send + Sync>> {
-        sqlx::Encode::<Postgres>::encode_by_ref(&self.to_string().as_str(), buf)
+        let version_str = self.to_string();
+        sqlx::Encode::<Postgres>::encode_by_ref(&version_str.as_str(), buf)
     }
 }
 
