@@ -64,6 +64,11 @@ fn test_non_digit_cmp() {
     assert_eq!(non_digit_cmp("~~", "~~a"), Ordering::Less);
     assert_eq!(non_digit_cmp("~~a", "~"), Ordering::Less);
     assert_eq!(non_digit_cmp("~", "a"), Ordering::Less);
+    // Test special characters that exercise the arithmetic on line 36
+    assert_eq!(non_digit_cmp("!", "@"), Ordering::Less); // ! = 33, @ = 64 + 256 = 320
+    assert_eq!(non_digit_cmp("@", "!"), Ordering::Greater);
+    assert_eq!(non_digit_cmp("#", "$"), Ordering::Less); // # = 35, $ = 36
+    assert_eq!(non_digit_cmp("|", "}"), Ordering::Less); // | = 124, } = 125
 }
 
 fn drop_leading_zeroes(mut s: &str) -> &str {
@@ -530,6 +535,22 @@ mod python_tests {
             assert_eq!(v.unbind().extract::<Version>(py).unwrap(), expected);
         });
     }
+
+    #[test]
+    fn test_from_pyobject_error() {
+        use super::Version;
+        use pyo3::prelude::*;
+        use std::ffi::CString;
+
+        Python::with_gil(|py| {
+            // Test that extracting from a non-Version object fails
+            let string_obj = py
+                .eval(&CString::new("'not a version'").unwrap(), None, None)
+                .unwrap();
+            let result = string_obj.extract::<Version>();
+            assert!(result.is_err());
+        });
+    }
 }
 
 #[cfg(feature = "serde")]
@@ -715,6 +736,13 @@ mod tests {
             "1:;a".parse::<Version>().unwrap_err(),
             ParseError("Invalid version string: 1:;a".to_string())
         );
+    }
+
+    #[test]
+    fn test_parse_error_display() {
+        let error = ParseError("test error message".to_string());
+        assert_eq!(format!("{}", error), "test error message");
+        assert_eq!(error.to_string(), "test error message");
     }
 
     #[test]
