@@ -35,15 +35,19 @@ pub fn strip_dfsg_suffix(version: &str) -> Option<&str> {
 /// ```
 pub fn add_dfsg_suffix(upstream_version: &str, old_upstream_version: Option<&str>) -> String {
     let style = if let Some(m) = old_upstream_version.and_then(|d| DFSG_REGEX.captures(d)) {
-        let mut style = m.get(2).unwrap().as_str().to_string() + m.get(3).unwrap().as_str();
-        if !m.get(4).unwrap().as_str().is_empty() {
-            style.push('1');
+        let part2 = m.get(2).unwrap().as_str();
+        let part3 = m.get(3).unwrap().as_str();
+        let part4 = m.get(4).unwrap().as_str();
+
+        if part4.is_empty() {
+            format!("{}{}", part2, part3)
+        } else {
+            format!("{}{}1", part2, part3)
         }
-        style
     } else {
         DFSG_DEFAULT_STYLE.to_string()
     };
-    upstream_version.to_string() + style.as_str()
+    format!("{}{}", upstream_version, style)
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -83,28 +87,25 @@ impl VcsSnapshot {
             } => {
                 let decoded_gitid = sha.as_ref().map(|sha| &sha[..std::cmp::min(sha.len(), 7)]);
                 let gitdate = date.map(|d| d.format("%Y%m%d").to_string());
-                if let (Some(decoded_gitid), Some(snapshot), Some(gitdate)) =
-                    (decoded_gitid, snapshot, gitdate.as_ref())
-                {
-                    format!("git{}.{}.{}", gitdate, snapshot, decoded_gitid)
-                } else if let (Some(decoded_gitid), Some(gitdate)) =
-                    (decoded_gitid, gitdate.as_ref())
-                {
-                    format!("git{}.{}", gitdate, decoded_gitid)
-                } else if let Some(decoded_gitid) = decoded_gitid {
-                    format!("git{}", decoded_gitid)
-                } else if let Some(gitdate) = gitdate {
-                    format!("git{}", gitdate)
-                } else {
-                    "git".to_string()
+
+                match (decoded_gitid, snapshot, gitdate.as_ref()) {
+                    (Some(gitid), Some(snapshot), Some(gitdate)) => {
+                        format!("git{}.{}.{}", gitdate, snapshot, gitid)
+                    }
+                    (Some(gitid), None, Some(gitdate)) => {
+                        format!("git{}.{}", gitdate, gitid)
+                    }
+                    (Some(gitid), _, None) => {
+                        format!("git{}", gitid)
+                    }
+                    (None, _, Some(gitdate)) => {
+                        format!("git{}", gitdate)
+                    }
+                    (None, _, None) => "git".to_string(),
                 }
             }
-            VcsSnapshot::Bzr { revno } => {
-                format!("bzr{}", revno)
-            }
-            VcsSnapshot::Svn { revno } => {
-                format!("svn{}", revno)
-            }
+            VcsSnapshot::Bzr { revno } => format!("bzr{}", revno),
+            VcsSnapshot::Svn { revno } => format!("svn{}", revno),
         }
     }
 }
