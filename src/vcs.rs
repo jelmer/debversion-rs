@@ -10,14 +10,14 @@ pub fn mangle_version_for_git(version: &Version) -> String {
     let version = version.to_string();
     // See https://dep-team.pages.debian.net/deps/dep14/
     let mut manipulated = version
-        .replace("~", "_")
-        .replace(":", "%")
+        .replace('~', "_")
+        .replace(':', "%")
         .replace("..", ".#.");
-    if manipulated.ends_with(".") {
+    if manipulated.ends_with('.') {
         manipulated.push('#');
     }
     if let Some(prefix) = manipulated.strip_suffix(".lock") {
-        manipulated = prefix.to_string() + "#lock"
+        manipulated = format!("{}#lock", prefix)
     }
     manipulated
 }

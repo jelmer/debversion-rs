@@ -1,6 +1,8 @@
 //! Vendor enum and related functions.
 // Ideally we wouldn't have a list like this, but unfortunately we do.
 
+use std::borrow::Cow;
+
 /// Vendor enum.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum Vendor {
@@ -16,7 +18,7 @@ pub enum Vendor {
 
 /// Error type for unknown vendor
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct UnknownVendorError(String);
+pub struct UnknownVendorError(Cow<'static, str>);
 
 impl std::fmt::Display for UnknownVendorError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -30,11 +32,12 @@ impl std::str::FromStr for Vendor {
     type Err = UnknownVendorError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "debian" | "Debian" => Ok(Vendor::Debian),
-            "ubuntu" | "Ubuntu" => Ok(Vendor::Ubuntu),
-            "kali" | "Kali" => Ok(Vendor::Kali),
-            _ => Err(UnknownVendorError(s.to_string())),
+        // Case-insensitive comparison
+        match s.to_lowercase().as_str() {
+            "debian" => Ok(Vendor::Debian),
+            "ubuntu" => Ok(Vendor::Ubuntu),
+            "kali" => Ok(Vendor::Kali),
+            _ => Err(UnknownVendorError(Cow::Owned(s.to_string()))),
         }
     }
 }
@@ -50,7 +53,7 @@ impl std::fmt::Display for Vendor {
 }
 
 /// Get the initial Debian revision for a given vendor.
-pub fn initial_debian_revision(vendor: Vendor) -> &'static str {
+pub const fn initial_debian_revision(vendor: Vendor) -> &'static str {
     match vendor {
         Vendor::Debian => "1",
         Vendor::Ubuntu => "0ubuntu1",

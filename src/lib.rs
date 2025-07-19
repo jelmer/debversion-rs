@@ -71,12 +71,14 @@ fn test_non_digit_cmp() {
     assert_eq!(non_digit_cmp("|", "}"), Ordering::Less); // | = 124, } = 125
 }
 
-fn drop_leading_zeroes(mut s: &str) -> &str {
+fn drop_leading_zeroes(s: &str) -> &str {
     // Drop leading zeroes while the next character is a digit
-    while s.starts_with('0') && s.chars().nth(1).is_some_and(|c| c.is_ascii_digit()) {
-        s = &s[1..];
+    let bytes = s.as_bytes();
+    let mut start = 0;
+    while start + 1 < bytes.len() && bytes[start] == b'0' && bytes[start + 1].is_ascii_digit() {
+        start += 1;
     }
-    s
+    &s[start..]
 }
 
 fn version_cmp_part(mut a: &str, mut b: &str) -> Ordering {
@@ -111,20 +113,30 @@ fn version_cmp_part(mut a: &str, mut b: &str) -> Ordering {
             .position(|c| !c.is_ascii_digit())
             .unwrap_or(b.len())];
 
-        let a_num = if a_digit.is_empty() {
-            BigInt::ZERO
-        } else {
-            a_digit.parse::<BigInt>().unwrap()
-        };
-
-        let b_num = if b_digit.is_empty() {
-            BigInt::ZERO
-        } else {
-            b_digit.parse::<BigInt>().unwrap()
-        };
-
         // Compare the digit part
-        match a_num.cmp(&b_num) {
+        let ordering = match (a_digit.len(), b_digit.len()) {
+            (0, 0) => Ordering::Equal,
+            (0, _) => Ordering::Less,
+            (_, 0) => Ordering::Greater,
+            // For small numbers that fit in u64, avoid BigInt allocation
+            (a_len, b_len) if a_len <= 19 && b_len <= 19 => {
+                match (a_digit.parse::<u64>(), b_digit.parse::<u64>()) {
+                    (Ok(a_num), Ok(b_num)) => a_num.cmp(&b_num),
+                    // Fallback to BigInt if parsing fails (shouldn't happen with valid version strings)
+                    _ => a_digit
+                        .parse::<BigInt>()
+                        .unwrap()
+                        .cmp(&b_digit.parse::<BigInt>().unwrap()),
+                }
+            }
+            // For very long digit sequences, use BigInt
+            _ => a_digit
+                .parse::<BigInt>()
+                .unwrap()
+                .cmp(&b_digit.parse::<BigInt>().unwrap()),
+        };
+
+        match ordering {
             Ordering::Equal => (),
             ordering => return ordering,
         }
@@ -200,12 +212,16 @@ impl FromStr for Version {
             })
             .transpose()?;
 
-        let debian_revision = Some(debian_revision).filter(|e| !e.is_empty());
+        let debian_revision = if debian_revision.is_empty() {
+            None
+        } else {
+            Some(debian_revision.to_string())
+        };
 
         Ok(Version {
             epoch,
             upstream_version: upstream_version.to_string(),
-            debian_revision: debian_revision.map(String::from),
+            debian_revision,
         })
     }
 }
@@ -286,16 +302,13 @@ impl Version {
     ///
     /// This will increment the binNMU suffix by one, or add a `+b1` suffix if there is no binNMU
     /// suffix.
-    pub fn increment_bin_nmu(&self) -> Version {
+    pub fn increment_bin_nmu(self) -> Version {
         fn increment_bin_nmu_suffix(s: &str) -> String {
             match s.split_once("+b") {
-                Some((prefix, rest)) => {
-                    if let Ok(num) = rest.parse::<i32>() {
-                        format!("{}+b{}", prefix, num + 1)
-                    } else {
-                        format!("{}+b1", s)
-                    }
-                }
+                Some((prefix, rest)) => match rest.parse::<i32>() {
+                    Ok(num) => format!("{}+b{}", prefix, num + 1),
+                    Err(_) => format!("{}+b1", s),
+                },
                 None => format!("{}+b1", s),
             }
         }
@@ -303,14 +316,14 @@ impl Version {
         if let Some(debian_revision) = self.debian_revision.as_ref() {
             Version {
                 epoch: self.epoch,
-                upstream_version: self.upstream_version.clone(),
+                upstream_version: self.upstream_version,
                 debian_revision: Some(increment_bin_nmu_suffix(debian_revision)),
             }
         } else {
             Version {
                 epoch: self.epoch,
                 upstream_version: increment_bin_nmu_suffix(&self.upstream_version),
-                debian_revision: None,
+                debian_revision: self.debian_revision,
             }
         }
     }
@@ -351,24 +364,34 @@ impl Version {
     /// ```
     pub fn canonicalize(&self) -> Version {
         let epoch = match self.epoch {
-            Some(0) | None => None,
-            Some(epoch) => Some(epoch),
+            Some(0) => None,
+            epoch => epoch,
         };
 
-        let mut upstream_version = self.upstream_version.as_str();
-
-        upstream_version = drop_leading_zeroes(upstream_version);
+        let upstream_version_stripped = drop_leading_zeroes(&self.upstream_version);
+        let upstream_version = if upstream_version_stripped == self.upstream_version {
+            self.upstream_version.clone()
+        } else {
+            upstream_version_stripped.to_string()
+        };
 
         let debian_revision = match self.debian_revision.as_ref() {
             Some(r) if r.chars().all(|c| c == '0') => None,
             None => None,
-            Some(revision) => Some(drop_leading_zeroes(revision)),
+            Some(revision) => {
+                let stripped = drop_leading_zeroes(revision);
+                if stripped == revision {
+                    Some(revision.clone())
+                } else {
+                    Some(stripped.to_string())
+                }
+            }
         };
 
         Version {
             epoch,
-            upstream_version: upstream_version.to_string(),
-            debian_revision: debian_revision.map(String::from),
+            upstream_version,
+            debian_revision,
         }
     }
 
@@ -377,22 +400,16 @@ impl Version {
     /// For native packages, increment the upstream version number.
     /// For other packages, increment the debian revision.
     pub fn increment_debian(&mut self) {
-        if self.debian_revision.is_some() {
-            self.debian_revision = self.debian_revision.as_ref().map(|v| {
-                {
-                    regex_replace!(r"\d+$", v, |x: &str| (x.parse::<i32>().unwrap() + 1)
-                        .to_string())
-                }
-                .to_string()
-            });
+        if let Some(ref mut debian_revision) = self.debian_revision {
+            *debian_revision = regex_replace!(r"\d+$", debian_revision, |x: &str| {
+                (x.parse::<i32>().unwrap() + 1).to_string()
+            })
+            .into_owned();
         } else {
-            self.upstream_version =
-                regex_replace!(r"\d+$", self.upstream_version.as_ref(), |x: &str| (x
-                    .parse::<i32>()
-                    .unwrap()
-                    + 1)
-                .to_string())
-                .to_string();
+            self.upstream_version = regex_replace!(r"\d+$", &self.upstream_version, |x: &str| {
+                (x.parse::<i32>().unwrap() + 1).to_string()
+            })
+            .into_owned();
         }
     }
 
@@ -594,7 +611,7 @@ impl AsVersion for String {
 
 impl AsVersion for Version {
     fn into_version(self) -> Result<Version, ParseError> {
-        Ok(self.clone())
+        Ok(self)
     }
 }
 
