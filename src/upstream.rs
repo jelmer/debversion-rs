@@ -1,5 +1,7 @@
 //! Utilities for working with upstream versions.
 
+use std::borrow::Cow;
+
 static DFSG_REGEX: &lazy_regex::Lazy<lazy_regex::Regex> =
     lazy_regex::regex!(r"^(.*)([\+~])(dfsg|ds)([0-9]*)$");
 const DFSG_DEFAULT_STYLE: &str = "+ds";
@@ -39,13 +41,13 @@ pub fn add_dfsg_suffix(upstream_version: &str, old_upstream_version: Option<&str
         let part3 = m.get(3).unwrap().as_str();
         let part4 = m.get(4).unwrap().as_str();
 
-        if part4.is_empty() {
+        Cow::Owned(if part4.is_empty() {
             format!("{}{}", part2, part3)
         } else {
             format!("{}{}1", part2, part3)
-        }
+        })
     } else {
-        DFSG_DEFAULT_STYLE.to_string()
+        Cow::Borrowed(DFSG_DEFAULT_STYLE)
     };
     format!("{}{}", upstream_version, style)
 }
@@ -84,26 +86,24 @@ impl VcsSnapshot {
                 date,
                 sha,
                 snapshot,
-            } => {
-                let decoded_gitid = sha.as_ref().map(|sha| &sha[..std::cmp::min(sha.len(), 7)]);
-                let gitdate = date.map(|d| d.format("%Y%m%d").to_string());
-
-                match (decoded_gitid, snapshot, gitdate.as_ref()) {
-                    (Some(gitid), Some(snapshot), Some(gitdate)) => {
-                        format!("git{}.{}.{}", gitdate, snapshot, gitid)
-                    }
-                    (Some(gitid), None, Some(gitdate)) => {
-                        format!("git{}.{}", gitdate, gitid)
-                    }
-                    (Some(gitid), _, None) => {
-                        format!("git{}", gitid)
-                    }
-                    (None, _, Some(gitdate)) => {
-                        format!("git{}", gitdate)
-                    }
-                    (None, _, None) => "git".to_string(),
+            } => match (sha.as_deref(), snapshot, date.as_ref()) {
+                (Some(sha), Some(snapshot), Some(date)) => {
+                    let gitid = &sha[..sha.len().min(7)];
+                    format!("git{}.{}.{}", date.format("%Y%m%d"), snapshot, gitid)
                 }
-            }
+                (Some(sha), None, Some(date)) => {
+                    let gitid = &sha[..sha.len().min(7)];
+                    format!("git{}.{}", date.format("%Y%m%d"), gitid)
+                }
+                (Some(sha), _, None) => {
+                    let gitid = &sha[..sha.len().min(7)];
+                    format!("git{}", gitid)
+                }
+                (None, _, Some(date)) => {
+                    format!("git{}", date.format("%Y%m%d"))
+                }
+                (None, _, None) => "git".to_string(),
+            },
             VcsSnapshot::Bzr { revno } => format!("bzr{}", revno),
             VcsSnapshot::Svn { revno } => format!("svn{}", revno),
         }
@@ -130,12 +130,19 @@ impl From<&str> for Direction {
     }
 }
 
-impl From<Direction> for &str {
-    fn from(d: Direction) -> Self {
-        match d {
+impl Direction {
+    /// Convert direction to its string representation
+    pub const fn as_str(&self) -> &'static str {
+        match self {
             Direction::Before => "~",
             Direction::After => "+",
         }
+    }
+}
+
+impl From<Direction> for &str {
+    fn from(d: Direction) -> Self {
+        d.as_str()
     }
 }
 
@@ -277,7 +284,7 @@ pub fn upstream_version_add_revision(
         }
     }
 
-    let sep: &str = sep.into();
+    let sep = sep.as_str();
 
     format!("{}{}{}", base_version, sep, vcs_snapshot.to_suffix())
 }
