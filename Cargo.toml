@@ -19,7 +19,7 @@ serde = [ "dep:serde",]
 
 [dependencies]
 chrono = { version = "0.4.38", default-features = false, features = ["alloc"] }
-lazy-regex = ">=3"
+lazy-regex = "3"
 num-bigint = "0.4.6"
 
 [dependencies.pyo3]
