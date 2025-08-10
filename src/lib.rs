@@ -947,4 +947,143 @@ mod tests {
         let b = "1:11.1.0~++20211011013104+1fdec59bffc1-1~exp1~20211011133507.6";
         assert_cmp!(a, b, Less);
     }
+
+    #[test]
+    fn test_drop_leading_zeroes() {
+        use super::drop_leading_zeroes;
+
+        // Test basic cases
+        assert_eq!(drop_leading_zeroes("1.0"), "1.0");
+        assert_eq!(drop_leading_zeroes("001.0"), "1.0");
+        assert_eq!(drop_leading_zeroes("000.1"), "0.1");
+
+        // Test edge cases for missed mutants
+        assert_eq!(drop_leading_zeroes("0"), "0");
+        assert_eq!(drop_leading_zeroes("00"), "0");
+        assert_eq!(drop_leading_zeroes("0a"), "0a");
+        assert_eq!(drop_leading_zeroes("01a"), "1a");
+
+        // Test single character
+        assert_eq!(drop_leading_zeroes("a"), "a");
+
+        // Test empty string
+        assert_eq!(drop_leading_zeroes(""), "");
+    }
+
+    #[test]
+    fn test_version_cmp_part_edge_cases() {
+        // Test cases that should hit the missed mutants in version_cmp_part
+
+        // Test empty strings
+        assert_eq!(version_cmp_part("", ""), Ordering::Equal);
+        assert_eq!(version_cmp_part("", "1"), Ordering::Less);
+        assert_eq!(version_cmp_part("1", ""), Ordering::Greater);
+
+        // Test digit comparison edge cases
+        assert_eq!(version_cmp_part("1", "1"), Ordering::Equal);
+        assert_eq!(version_cmp_part("01", "1"), Ordering::Equal);
+
+        // Test very long digit sequences to hit BigInt path
+        let long_a = "123456789012345678901234567890";
+        let long_b = "123456789012345678901234567891";
+        assert_eq!(version_cmp_part(long_a, long_b), Ordering::Less);
+
+        // Test mixed digit/non-digit sequences
+        assert_eq!(version_cmp_part("1a2", "1a3"), Ordering::Less);
+        assert_eq!(version_cmp_part("1a2", "1b1"), Ordering::Less);
+
+        // Test tilde handling
+        assert_eq!(version_cmp_part("1~", "1"), Ordering::Less);
+        assert_eq!(version_cmp_part("~1", "1"), Ordering::Less);
+    }
+
+    #[test]
+    fn test_canonicalize_edge_cases() {
+        // Test cases that should hit missed mutants in canonicalize
+
+        // Test epoch handling
+        let v1 = Version {
+            epoch: Some(0),
+            upstream_version: "1.0".to_string(),
+            debian_revision: None,
+        };
+        let canonical = v1.canonicalize();
+        assert_eq!(canonical.epoch, None);
+
+        // Test debian revision all zeros
+        let v2 = Version {
+            epoch: None,
+            upstream_version: "1.0".to_string(),
+            debian_revision: Some("000".to_string()),
+        };
+        let canonical2 = v2.canonicalize();
+        assert_eq!(canonical2.debian_revision, None);
+
+        // Test debian revision with leading zeros
+        let v3 = Version {
+            epoch: None,
+            upstream_version: "1.0".to_string(),
+            debian_revision: Some("001".to_string()),
+        };
+        let canonical3 = v3.canonicalize();
+        assert_eq!(canonical3.debian_revision, Some("1".to_string()));
+
+        // Test upstream version with leading zeros
+        let v4 = Version {
+            epoch: None,
+            upstream_version: "001.0".to_string(),
+            debian_revision: None,
+        };
+        let canonical4 = v4.canonicalize();
+        assert_eq!(canonical4.upstream_version, "1.0");
+
+        // Test unchanged cases
+        let v5 = Version {
+            epoch: Some(1),
+            upstream_version: "1.0".to_string(),
+            debian_revision: Some("1".to_string()),
+        };
+        let canonical5 = v5.canonicalize();
+        assert_eq!(canonical5.upstream_version, "1.0");
+        assert_eq!(canonical5.debian_revision, Some("1".to_string()));
+    }
+
+    #[test]
+    fn test_partial_eq_false() {
+        // Test PartialEq returning false to catch the missed mutant
+        assert!("1.0-1"
+            .parse::<Version>()
+            .unwrap()
+            .ne(&"1.0-2".parse::<Version>().unwrap()));
+
+        assert!("1.0-1"
+            .parse::<Version>()
+            .unwrap()
+            .ne(&"2.0-1".parse::<Version>().unwrap()));
+
+        assert!("1:1.0-1"
+            .parse::<Version>()
+            .unwrap()
+            .ne(&"2:1.0-1".parse::<Version>().unwrap()));
+    }
+
+    #[test]
+    fn test_non_digit_cmp_edge_cases() {
+        use super::non_digit_cmp;
+
+        // Test tilde vs regular chars
+        assert_eq!(non_digit_cmp("~", "a"), Ordering::Less);
+        assert_eq!(non_digit_cmp("~", "A"), Ordering::Less);
+        assert_eq!(non_digit_cmp("~", "!"), Ordering::Less);
+
+        // Test special character ordering
+        assert_eq!(non_digit_cmp("!", "@"), Ordering::Less);
+        assert_eq!(non_digit_cmp("@", "A"), Ordering::Greater);
+        assert_eq!(non_digit_cmp("Z", "["), Ordering::Less);
+
+        // Test empty strings
+        assert_eq!(non_digit_cmp("", ""), Ordering::Equal);
+        assert_eq!(non_digit_cmp("", "a"), Ordering::Less);
+        assert_eq!(non_digit_cmp("a", ""), Ordering::Greater);
+    }
 }

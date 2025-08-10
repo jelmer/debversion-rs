@@ -467,4 +467,59 @@ mod tests {
             )
         );
     }
+
+    #[test]
+    fn test_upstream_version_add_revision_git_snapshot_increment() {
+        // Test the missed mutants in line 273-274 around snapshot increment logic
+
+        // Test when dates are equal but SHAs are different - should increment snapshot
+        let result = super::upstream_version_add_revision(
+            "1.2.3+git20210101.1.abcdefa",
+            super::VcsSnapshot::Git {
+                date: Some(chrono::NaiveDate::from_ymd_opt(2021, 1, 1).unwrap()),
+                sha: Some("bcdefgh".to_string()),
+                snapshot: None,
+            },
+            None,
+        );
+        // The SHA is truncated to 7 characters, so "bcdefgh" becomes "bcdefgh"
+        assert_eq!("1.2.3+git20210101.2.bcdefgh", result);
+
+        // Test when dates are different - should reset snapshot to 1
+        let result2 = super::upstream_version_add_revision(
+            "1.2.3+git20210101.5.abcdefa",
+            super::VcsSnapshot::Git {
+                date: Some(chrono::NaiveDate::from_ymd_opt(2021, 1, 2).unwrap()),
+                sha: Some("bcdefgh".to_string()),
+                snapshot: None,
+            },
+            None,
+        );
+        assert_eq!("1.2.3+git20210102.1.bcdefgh", result2);
+
+        // Test when dates are equal and SHAs are equal - should reset snapshot to 1
+        let result3 = super::upstream_version_add_revision(
+            "1.2.3+git20210101.1.abcdefa",
+            super::VcsSnapshot::Git {
+                date: Some(chrono::NaiveDate::from_ymd_opt(2021, 1, 1).unwrap()),
+                sha: Some("abcdefa".to_string()),
+                snapshot: None,
+            },
+            None,
+        );
+        // Since date == date and sha == sha (NOT !=), condition is false, so snapshot = Some(1)
+        assert_eq!("1.2.3+git20210101.1.abcdefa", result3);
+
+        // Test different dates should set snapshot to 1 (not increment)
+        let result4 = super::upstream_version_add_revision(
+            "1.2.3+git20210101.3.abcdefa",
+            super::VcsSnapshot::Git {
+                date: Some(chrono::NaiveDate::from_ymd_opt(2021, 1, 3).unwrap()),
+                sha: Some("bcdefgh".to_string()),
+                snapshot: None,
+            },
+            None,
+        );
+        assert_eq!("1.2.3+git20210103.1.bcdefgh", result4);
+    }
 }
