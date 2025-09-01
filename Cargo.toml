@@ -23,7 +23,7 @@ lazy-regex = "3"
 num-bigint = "0.4.6"
 
 [dependencies.pyo3]
-version = ">=0.24, <0.26"
+version = ">=0.24, <0.27"
 optional = true
 
 [dependencies.sqlx]
