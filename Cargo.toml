@@ -39,7 +39,7 @@ optional = true
 [dev-dependencies.sqlx]
 version = "^0.8"
 default-features = false
-features = [ "runtime-async-std-native-tls",]
+features = [ "runtime-async-std-rustls",]
 
 [dev-dependencies.pyo3]
 version = ">=0.24, <0.26"
