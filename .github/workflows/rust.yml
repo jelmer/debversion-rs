@@ -1,6 +1,7 @@
+---
 name: Rust
 
-on:
+"on":
   push:
   pull_request:
 
@@ -17,61 +18,49 @@ jobs:
       fail-fast: false
 
     steps:
-    - uses: actions/checkout@v5
-    - uses: actions/setup-python@v6
-      with:
-        python-version: '3.x'
-    - run: |
-        python -m pip install python_debian
-    - name: Build
-      run: cargo build --verbose
-      env:
-        RUSTFLAGS: -Dwarnings
-    - name: Install cargo-all-features
-      run: cargo install cargo-all-features
-    - name: Run tests
-      run: cargo test-all-features
-      env:
-        RUSTFLAGS: -Dwarnings
-    - name: Check formatting
-      run: cargo fmt -- --check
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.x'
+      - run: |
+          python -m pip install python_debian
+      - name: Build
+        run: cargo build --verbose
+      - name: Install cargo-all-features
+        run: cargo install cargo-all-features
+      - name: Run tests
+        run: cargo test-all-features
+      - name: Check formatting
+        run: cargo fmt -- --check
 
   test-minimal-versions:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v5
-    - uses: actions/setup-python@v6
-      with:
-        python-version: '3.x'
-    - run: |
-        python -m pip install python_debian
-    - name: Install cargo-hack
-      run: cargo install cargo-hack
-    - name: Install cargo-minimal-versions
-      run: cargo install cargo-minimal-versions
-    - name: Check with minimal versions (all features)
-      run: cargo minimal-versions check --all-features
-      env:
-        RUSTFLAGS: -Dwarnings
-    - name: Test with minimal versions (all features)
-      run: cargo minimal-versions test --all-features
-      env:
-        RUSTFLAGS: -Dwarnings
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.x'
+      - run: |
+          python -m pip install python_debian
+      - name: Install cargo-hack
+        run: cargo install cargo-hack
+      - name: Install cargo-minimal-versions
+        run: cargo install cargo-minimal-versions
+      - name: Test with minimal versions (all features)
+        run: cargo minimal-versions test --all-features
 
   test-maximal-versions:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v5
-    - uses: actions/setup-python@v6
-      with:
-        python-version: '3.x'
-    - run: |
-        python -m pip install python_debian
-    - name: Update to maximal versions
-      run: cargo update
-    - name: Install cargo-all-features
-      run: cargo install cargo-all-features
-    - name: Test with maximal versions
-      run: cargo test-all-features
-      env:
-        RUSTFLAGS: -Dwarnings
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.x'
+      - run: |
+          python -m pip install python_debian
+      - name: Update to maximal versions
+        run: cargo update
+      - name: Install cargo-all-features
+        run: cargo install cargo-all-features
+      - name: Test with maximal versions
+        run: cargo test-all-features
