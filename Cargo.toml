@@ -41,12 +41,6 @@ version = "0.8.2"
 default-features = false
 features = [ "runtime-async-std-rustls",]
 
-[dev-dependencies.openssl]
-version = "0.10.64"
-
-[dev-dependencies.openssl-sys]
-version = "0.9.100"
-
 [dev-dependencies.pyo3]
 version = ">=0.24, <0.26"
 features = [ "auto-initialize",]
