@@ -466,8 +466,10 @@ mod sqlx_tests {
 use pyo3::prelude::*;
 
 #[cfg(feature = "python-debian")]
-impl FromPyObject<'_> for Version {
-    fn extract_bound(ob: &Bound<PyAny>) -> PyResult<Self> {
+impl FromPyObject<'_, '_> for Version {
+    type Error = PyErr;
+
+    fn extract(ob: pyo3::Borrowed<'_, '_, PyAny>) -> PyResult<Self> {
         let debian_support = Python::import(ob.py(), "debian.debian_support")?;
         let version_cls = debian_support.getattr("Version")?;
         if !ob.is_instance(&version_cls)? {
