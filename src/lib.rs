@@ -263,6 +263,54 @@ impl Version {
         )
     }
 
+    /// Parse a version string with lenient parsing rules.
+    ///
+    /// This method accepts version strings that may not strictly comply with Debian Policy,
+    /// such as versions containing underscores. While the standard `FromStr` implementation
+    /// enforces strict Debian Policy compliance, this method is more permissive to handle
+    /// real-world packages that may use non-standard characters.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use debversion::Version;
+    /// // This version contains underscores, which violates Debian Policy
+    /// // but may appear in real-world packages
+    /// let v = Version::parse_lenient("2.0.37+cvs.JCW_PRE2_2037-1").unwrap();
+    /// assert_eq!(v.upstream_version, "2.0.37+cvs.JCW_PRE2_2037");
+    /// assert_eq!(v.debian_revision, Some("1".to_string()));
+    /// ```
+    pub fn parse_lenient(text: &str) -> Result<Self, ParseError> {
+        let (_, epoch, upstream_version, debian_revision) = if let Some(c) = regex_captures!(
+            r"^(?:(\d+):)?([A-Za-z0-9.+:~_-]+?)(?:-([A-Za-z0-9+.~_]+))?$",
+            text
+        ) {
+            c
+        } else {
+            return Err(ParseError(format!("Invalid version string: {}", text)));
+        };
+
+        let epoch = Some(epoch)
+            .filter(|e| !e.is_empty())
+            .map(|e| {
+                e.parse()
+                    .map_err(|e| ParseError(format!("Error parsing epoch: {}", e)))
+            })
+            .transpose()?;
+
+        let debian_revision = if debian_revision.is_empty() {
+            None
+        } else {
+            Some(debian_revision.to_string())
+        };
+
+        Ok(Version {
+            epoch,
+            upstream_version: upstream_version.to_string(),
+            debian_revision,
+        })
+    }
+
     /// Is this a binNMU?
     ///
     /// A binNMU is a binary-only NMU (Non-Maintainer Upload) where the source package is not
@@ -1087,5 +1135,44 @@ mod tests {
         assert_eq!(non_digit_cmp("", ""), Ordering::Equal);
         assert_eq!(non_digit_cmp("", "a"), Ordering::Less);
         assert_eq!(non_digit_cmp("a", ""), Ordering::Greater);
+    }
+
+    #[test]
+    fn test_parse_lenient() {
+        // Test parsing version with underscores (violates Debian Policy but exists in the wild)
+        let v = Version::parse_lenient("2.0.37+cvs.JCW_PRE2_2037-1").unwrap();
+        assert_eq!(v.epoch, None);
+        assert_eq!(v.upstream_version, "2.0.37+cvs.JCW_PRE2_2037");
+        assert_eq!(v.debian_revision, Some("1".to_string()));
+
+        // Test with epoch and underscores
+        let v2 = Version::parse_lenient("1:3.5_beta-2").unwrap();
+        assert_eq!(v2.epoch, Some(1));
+        assert_eq!(v2.upstream_version, "3.5_beta");
+        assert_eq!(v2.debian_revision, Some("2".to_string()));
+
+        // Test with underscores in debian revision
+        let v3 = Version::parse_lenient("1.0-ubuntu_1").unwrap();
+        assert_eq!(v3.epoch, None);
+        assert_eq!(v3.upstream_version, "1.0");
+        assert_eq!(v3.debian_revision, Some("ubuntu_1".to_string()));
+
+        // Test that standard versions still work with lenient parsing
+        let v4 = Version::parse_lenient("1.0-1").unwrap();
+        assert_eq!(v4.epoch, None);
+        assert_eq!(v4.upstream_version, "1.0");
+        assert_eq!(v4.debian_revision, Some("1".to_string()));
+    }
+
+    #[test]
+    fn test_parse_strict_rejects_underscores() {
+        // Verify that the strict parser (FromStr) still rejects underscores
+        assert!("2.0.37+cvs.JCW_PRE2_2037-1".parse::<Version>().is_err());
+        assert!("3.5_beta-1".parse::<Version>().is_err());
+        assert!("1.0-ubuntu_1".parse::<Version>().is_err());
+
+        // But standard versions should still parse fine
+        assert!("1.0-1".parse::<Version>().is_ok());
+        assert!("1:2.0+really1.0-1".parse::<Version>().is_ok());
     }
 }
