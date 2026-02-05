@@ -557,7 +557,7 @@ mod python_tests {
         use pyo3::prelude::*;
         use std::ffi::CString;
 
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let globals = pyo3::types::PyDict::new(py);
             globals
                 .set_item(
@@ -590,7 +590,7 @@ mod python_tests {
         use super::Version;
         use pyo3::prelude::*;
 
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let v = Version {
                 epoch: Some(1),
                 upstream_version: "1.0".to_string(),
@@ -609,7 +609,7 @@ mod python_tests {
         use pyo3::prelude::*;
         use std::ffi::CString;
 
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             // Test that extracting from a non-Version object fails
             let string_obj = py
                 .eval(&CString::new("'not a version'").unwrap(), None, None)
