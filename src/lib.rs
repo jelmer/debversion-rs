@@ -439,6 +439,44 @@ impl Version {
         }
     }
 
+    /// Check if this version is a backport.
+    ///
+    /// Backports use a `~bpoN+M` suffix, where `N` is the Debian release
+    /// number being targeted and `M` the backport revision, e.g.
+    /// `1.0-1~bpo12+1`. Such uploads are made by the maintainer and are
+    /// exempt from the sourceful NMU check.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use debversion::Version;
+    /// assert!("1.0-1~bpo12+1".parse::<Version>().unwrap().is_backport());
+    /// assert!("1.0-1~bpo11+2".parse::<Version>().unwrap().is_backport());
+    /// assert!(!"1.0-1".parse::<Version>().unwrap().is_backport());
+    /// ```
+    pub fn is_backport(&self) -> bool {
+        regex_is_match!(r"~bpo\d+\+\d+$", &self.to_string())
+    }
+
+    /// Check if this version is a stable or security update.
+    ///
+    /// Stable and security updates use a `~debNuM` or `+debNuM` suffix,
+    /// where `N` is the Debian release number and `M` the update revision,
+    /// e.g. `1.0-1+deb12u1`. Such uploads are exempt from the sourceful NMU
+    /// check.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use debversion::Version;
+    /// assert!("1.0-1+deb12u1".parse::<Version>().unwrap().is_stable_update());
+    /// assert!("1.0-1~deb11u2".parse::<Version>().unwrap().is_stable_update());
+    /// assert!(!"1.0-1".parse::<Version>().unwrap().is_stable_update());
+    /// ```
+    pub fn is_stable_update(&self) -> bool {
+        regex_is_match!(r"[~+]deb\d+u\d+$", &self.to_string())
+    }
+
     /// Return canonicalized version of this version
     ///
     /// # Examples
@@ -1097,6 +1135,53 @@ mod tests {
         assert!(!"1.0-1".parse::<Version>().unwrap().is_nmu());
         assert!(!"1.0".parse::<Version>().unwrap().is_nmu());
         assert!(!"1.1".parse::<Version>().unwrap().is_nmu());
+    }
+
+    #[test]
+    fn test_is_backport() {
+        assert!("1.0-1~bpo12+1".parse::<Version>().unwrap().is_backport());
+        assert!("1.0-1~bpo11+2".parse::<Version>().unwrap().is_backport());
+        assert!("2:1.0-1~bpo12+1".parse::<Version>().unwrap().is_backport());
+        // Native backport: the suffix is on the upstream version.
+        assert!("1.0~bpo12+1".parse::<Version>().unwrap().is_backport());
+        assert!(!"1.0-1".parse::<Version>().unwrap().is_backport());
+        assert!(!"1.0".parse::<Version>().unwrap().is_backport());
+        // A `~bpoN` without a `+M` revision is not matched.
+        assert!(!"1.0-1~bpo12".parse::<Version>().unwrap().is_backport());
+        // A stable update is not a backport.
+        assert!(!"1.0-1+deb12u1".parse::<Version>().unwrap().is_backport());
+    }
+
+    #[test]
+    fn test_is_stable_update() {
+        assert!("1.0-1+deb12u1"
+            .parse::<Version>()
+            .unwrap()
+            .is_stable_update());
+        assert!("1.0-1~deb11u2"
+            .parse::<Version>()
+            .unwrap()
+            .is_stable_update());
+        assert!("2:1.0-1+deb12u1"
+            .parse::<Version>()
+            .unwrap()
+            .is_stable_update());
+        // Native package: the suffix is on the upstream version.
+        assert!("1.0+deb12u1".parse::<Version>().unwrap().is_stable_update());
+        assert!(!"1.0-1".parse::<Version>().unwrap().is_stable_update());
+        assert!(!"1.0".parse::<Version>().unwrap().is_stable_update());
+        // A `+debN` without a `uM` revision is not matched.
+        assert!(!"1.0-1+deb12".parse::<Version>().unwrap().is_stable_update());
+        // The `~`/`+` separator is required.
+        assert!(!"1.0-1deb12u1"
+            .parse::<Version>()
+            .unwrap()
+            .is_stable_update());
+        // A backport is not a stable update.
+        assert!(!"1.0-1~bpo12+1"
+            .parse::<Version>()
+            .unwrap()
+            .is_stable_update());
     }
 
     #[test]
