@@ -3,7 +3,7 @@
 // Until we drop support for PyO3 0.22
 #![allow(deprecated)]
 
-use lazy_regex::{regex_captures, regex_replace};
+use lazy_regex::{regex_captures, regex_is_match, regex_replace};
 use num_bigint::BigInt;
 use std::cmp::Ordering;
 use std::str::FromStr;
@@ -250,6 +250,33 @@ impl std::hash::Hash for Version {
     }
 }
 
+/// Append (or bump) the `+nmuN` suffix of a native package version.
+fn bump_native_nmu(upstream: &str) -> String {
+    if let Some((_, prefix, n)) = regex_captures!(r"^(.*)\+nmu(\d+)$", upstream) {
+        if let Ok(n) = n.parse::<u32>() {
+            return format!("{}+nmu{}", prefix, n + 1);
+        }
+    }
+    format!("{}+nmu1", upstream)
+}
+
+/// Compute the NMU Debian revision derived from a maintainer revision.
+///
+/// `1` becomes `1.1` and `2` becomes `2.1` (first NMU); `1.1` becomes
+/// `1.2` (further NMU). Returns `None` for revisions that don't follow
+/// the plain `integer` / `integer.integer` shape, where the correct NMU
+/// revision cannot be derived mechanically.
+fn bump_revision_nmu(rev: &str) -> Option<String> {
+    if regex_is_match!(r"^\d+$", rev) {
+        return Some(format!("{}.1", rev));
+    }
+    if let Some((_, prefix, n)) = regex_captures!(r"^(\d+)\.(\d+)$", rev) {
+        let n: u32 = n.parse().ok()?;
+        return Some(format!("{}.{}", prefix, n + 1));
+    }
+    None
+}
+
 impl Version {
     /// Return explicit tuple of this version
     ///
@@ -379,9 +406,15 @@ impl Version {
     /// Check if this version is a sourceful NMU
     ///
     /// A sourceful NMU is a Non-Maintainer Upload where the source package is changed.
-    /// This is indicated by the presence of a `+nmu[:digit:]` suffix.
-    /// This is not part of the Debian Policy Manual, but it is commonly used to indicate a
-    /// sourceful NMU.
+    ///
+    /// This recognises two conventions:
+    ///
+    /// * a `+nmu[:digit:]` suffix, used for native packages (and sometimes
+    ///   derivatives). This is not part of the Debian Policy Manual, but it
+    ///   is commonly used to indicate a sourceful NMU.
+    /// * the classic non-native form, where the Debian revision of the last
+    ///   maintainer upload is extended with a `.[:digit:]` component, e.g.
+    ///   `1` becomes `1.1` and `2.1` becomes `2.2`.
     pub fn is_nmu(&self) -> bool {
         self.nmu_count().is_some()
     }
@@ -389,14 +422,19 @@ impl Version {
     /// Return the sourceful NMU count of this version
     ///
     /// This will return the sourceful NMU count of this version, or None if this is not a
-    /// sourceful NMU.
+    /// sourceful NMU. See [`Version::is_nmu`] for the conventions that are recognised.
     pub fn nmu_count(&self) -> Option<i32> {
         fn nmu_suffix(s: &str) -> Option<i32> {
             s.split_once("+nmu").and_then(|(_, rest)| rest.parse().ok())
         }
         if let Some(debian_revision) = self.debian_revision.as_ref() {
-            nmu_suffix(debian_revision)
+            // Non-native package: a `+nmuN` suffix, or the classic
+            // `maintainer-revision.N` form (e.g. `1.1`, `2.3`).
+            nmu_suffix(debian_revision).or_else(|| {
+                regex_captures!(r"^\d+\.(\d+)$", debian_revision).and_then(|(_, n)| n.parse().ok())
+            })
         } else {
+            // Native package: only the `+nmuN` suffix applies.
             nmu_suffix(self.upstream_version.as_str())
         }
     }
@@ -464,6 +502,58 @@ impl Version {
     /// Return true if this is a native package
     pub fn is_native(&self) -> bool {
         self.debian_revision.is_none()
+    }
+
+    /// Create a sourceful NMU version from this version.
+    ///
+    /// For native packages (those without a Debian revision), this appends a
+    /// `+nmu1` suffix to the upstream version, or bumps an existing `+nmuN`
+    /// suffix.
+    ///
+    /// For non-native packages, the Debian revision is bumped following the
+    /// NMU convention: `1` becomes `1.1`, `2` becomes `2.1` (first NMU) and
+    /// `1.1` becomes `1.2` (further NMU). For revisions that don't follow the
+    /// plain `integer` or `integer.integer` shape (e.g. `1ubuntu1`), where the
+    /// correct NMU revision cannot be derived mechanically, a `+nmuN` suffix
+    /// is appended to the Debian revision instead.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use debversion::Version;
+    /// assert_eq!(
+    ///     "1.0".parse::<Version>().unwrap().bump_nmu(),
+    ///     "1.0+nmu1".parse().unwrap()
+    /// );
+    /// assert_eq!(
+    ///     "1.0+nmu1".parse::<Version>().unwrap().bump_nmu(),
+    ///     "1.0+nmu2".parse().unwrap()
+    /// );
+    /// assert_eq!(
+    ///     "1.0-1".parse::<Version>().unwrap().bump_nmu(),
+    ///     "1.0-1.1".parse().unwrap()
+    /// );
+    /// assert_eq!(
+    ///     "1.0-2.1".parse::<Version>().unwrap().bump_nmu(),
+    ///     "1.0-2.2".parse().unwrap()
+    /// );
+    /// ```
+    pub fn bump_nmu(self) -> Version {
+        if let Some(debian_revision) = self.debian_revision {
+            let debian_revision = bump_revision_nmu(&debian_revision)
+                .unwrap_or_else(|| bump_native_nmu(&debian_revision));
+            Version {
+                epoch: self.epoch,
+                upstream_version: self.upstream_version,
+                debian_revision: Some(debian_revision),
+            }
+        } else {
+            Version {
+                epoch: self.epoch,
+                upstream_version: bump_native_nmu(&self.upstream_version),
+                debian_revision: None,
+            }
+        }
     }
 }
 
@@ -973,21 +1063,40 @@ mod tests {
 
     #[test]
     fn test_nmu_count() {
+        // `+nmuN` suffix style.
         assert_eq!(Some(1), "1.0+nmu1".parse::<Version>().unwrap().nmu_count());
         assert_eq!(
             Some(1),
             "1.0-1+nmu1".parse::<Version>().unwrap().nmu_count()
         );
+        assert_eq!(
+            Some(2),
+            "1.0-1ubuntu1+nmu2".parse::<Version>().unwrap().nmu_count()
+        );
+
+        // Classic non-native `maintainer-revision.N` style.
+        assert_eq!(Some(1), "1.0-1.1".parse::<Version>().unwrap().nmu_count());
+        assert_eq!(Some(1), "1.0-2.1".parse::<Version>().unwrap().nmu_count());
+        assert_eq!(Some(3), "1.0-2.3".parse::<Version>().unwrap().nmu_count());
+
+        // Plain maintainer uploads are not NMUs.
         assert_eq!(None, "1.0-1".parse::<Version>().unwrap().nmu_count());
         assert_eq!(None, "1.0".parse::<Version>().unwrap().nmu_count());
+        assert_eq!(None, "1.0-1ubuntu1".parse::<Version>().unwrap().nmu_count());
+        // The `.N` form only applies to the Debian revision, not the
+        // upstream version of a native package.
+        assert_eq!(None, "1.1".parse::<Version>().unwrap().nmu_count());
     }
 
     #[test]
     fn test_is_nmu() {
         assert!("1.0+nmu1".parse::<Version>().unwrap().is_nmu());
         assert!("1.0-1+nmu1".parse::<Version>().unwrap().is_nmu());
+        assert!("1.0-1.1".parse::<Version>().unwrap().is_nmu());
+        assert!("1.0-2.1".parse::<Version>().unwrap().is_nmu());
         assert!(!"1.0-1".parse::<Version>().unwrap().is_nmu());
         assert!(!"1.0".parse::<Version>().unwrap().is_nmu());
+        assert!(!"1.1".parse::<Version>().unwrap().is_nmu());
     }
 
     #[test]
@@ -1135,6 +1244,67 @@ mod tests {
         assert_eq!(non_digit_cmp("", ""), Ordering::Equal);
         assert_eq!(non_digit_cmp("", "a"), Ordering::Less);
         assert_eq!(non_digit_cmp("a", ""), Ordering::Greater);
+    }
+
+    #[test]
+    fn test_bump_nmu() {
+        // Native package: append +nmu1, then bump it.
+        assert_eq!(
+            "1.0+nmu1".parse::<Version>().unwrap(),
+            "1.0".parse::<Version>().unwrap().bump_nmu()
+        );
+        assert_eq!(
+            "1.0+nmu2".parse::<Version>().unwrap(),
+            "1.0+nmu1".parse::<Version>().unwrap().bump_nmu()
+        );
+
+        // Non-native package: first NMU appends `.1` to the revision.
+        assert_eq!(
+            "1.0-1.1".parse::<Version>().unwrap(),
+            "1.0-1".parse::<Version>().unwrap().bump_nmu()
+        );
+        assert_eq!(
+            "1.0-2.1".parse::<Version>().unwrap(),
+            "1.0-2".parse::<Version>().unwrap().bump_nmu()
+        );
+
+        // Further NMU bumps the trailing component of the revision.
+        assert_eq!(
+            "1.0-1.2".parse::<Version>().unwrap(),
+            "1.0-1.1".parse::<Version>().unwrap().bump_nmu()
+        );
+        assert_eq!(
+            "1.0-2.2".parse::<Version>().unwrap(),
+            "1.0-2.1".parse::<Version>().unwrap().bump_nmu()
+        );
+
+        // Epoch is preserved.
+        assert_eq!(
+            "2:1.0-1.1".parse::<Version>().unwrap(),
+            "2:1.0-1".parse::<Version>().unwrap().bump_nmu()
+        );
+
+        // Revisions that don't follow the integer(.integer) shape fall back
+        // to a +nmuN suffix on the Debian revision.
+        assert_eq!(
+            "1.0-1ubuntu1+nmu1".parse::<Version>().unwrap(),
+            "1.0-1ubuntu1".parse::<Version>().unwrap().bump_nmu()
+        );
+        assert_eq!(
+            "1.0-1ubuntu1+nmu2".parse::<Version>().unwrap(),
+            "1.0-1ubuntu1+nmu1".parse::<Version>().unwrap().bump_nmu()
+        );
+
+        // The result of an NMU bump is recognised as an NMU, regardless of
+        // which convention was used.
+        assert!("1.0".parse::<Version>().unwrap().bump_nmu().is_nmu());
+        assert!("1.0-1".parse::<Version>().unwrap().bump_nmu().is_nmu());
+        assert!("1.0-1.1".parse::<Version>().unwrap().bump_nmu().is_nmu());
+        assert!("1.0-1ubuntu1"
+            .parse::<Version>()
+            .unwrap()
+            .bump_nmu()
+            .is_nmu());
     }
 
     #[test]
